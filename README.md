@@ -1,4 +1,4 @@
-## *Great GitHub Repos through the Ages* (Paper Title)
+## ** (Paper Title)
 
 #### Ann K Postdoc and Sarah J Converse (Paper Authors)
 
