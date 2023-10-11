@@ -12,6 +12,7 @@ library(IPMbook)
 library(popbio)
 library(foreach) 
 library(doParallel) 
+library(latex2exp)
 
 source(here::here('scripts', 'PlotTheme.R'))
 
@@ -115,9 +116,8 @@ psi_ests <- data.frame(med = c(0.2, 0.6, 0.4, 0.8, 0.5),
 
 ```
 
-```{r aerial survey NEW agTrend modeled count data}
+```{r aerial survey 2022 agTrend modeled count data}
 
-#after discussion with Tom, Katie, Devin Feb 2023
 ###count data
 np_raw <- read.csv(here::here('Data', 'wdpsnp_count_region_2022.csv'), 
                      header = T, stringsAsFactors = F) %>%
@@ -285,11 +285,8 @@ ocean_SSL <- read.csv(here::here('data', 'ProcData', 'ocean_all_adj_east.csv'),
 
 #adj_year 1 = survival from 2000 to 2001; 18 = survival from 2017 to 2018
 start <- 1; stop <- 18
-seas <- 'NB'
-# seas <- 'spr'
+seas <- 'NB' #NB = 'non-breeding' season, fall-spring
 seas <- 'sum'
-# seas <- 'fall'
-# seas <- 'win'
 
 albsa <- as.numeric(scale(eval(parse(text = paste0('ocean_SSL$ALBSA_', seas, '[', start,':', stop,']')))))
 PDO <- as.numeric(scale(eval(parse(text = paste0('ocean_SSL$PDO_', seas, '[', start,':', stop,']')))))
@@ -318,6 +315,10 @@ prod[is.na(prod)] <- 0
 NOI[is.na(NOI)] <- 0
 scal[is.na(scal)] <- 0
 
+#organize data for environmental projection scenarios - used below  
+sst_dat <- as.numeric(eval(parse(text = paste0('ocean_SSL$sst_', seas, '[', start,':', stop,']'))))
+npgo_dat <- eval(parse(text = paste0('ocean_SSL$NPGO_', seas, '[', start,':', stop,']')))
+
 ### To examine correlations
 # library(Hmisc)
 # 
@@ -335,13 +336,6 @@ scal[is.na(scal)] <- 0
 # cor_vals <- flattenCorrMatrix(cor$r, cor$P) %>% arrange(cor)
 # corrplot(cor$r, type = "lower", order = "original", p.mat = cor$P,
 #          insig = "blank", sig.level = 0.01, tl.col = "black", tl.cex = .9, number.cex = .2)
-# 
-# #strongly correlated variables
-# #NB: PDO-MEI/NOI/NPI, albsa-NPI
-# # spring: PDO-NOI/NPI/SST, albsa-curl, NPI-up, sst-MEI
-# #summer: MEI-PDO/NPGO, albsa-NPI, AOI-NPI, MEI-NOI
-# #fall: NOI-PDO, PDO-MEI, NOI-MEI, AOI-albsa
-# #winter: NPI-albsa, MEI-albsa, MEI-PDO, uwnd-PDO, curl-albsa, curl-chla
 
 
 ```
@@ -507,8 +501,6 @@ z.init.m[which(z.st.m == 7)] <- NA #need to get the between-breeder observations
 
 ```{r stable age discrete uniform}
 
-###??### cleanup notes
-#I think this is the right code that is needed? pasted from archive 2/2023
 ### stable age code
 ## Females and males
 ests <- data.frame(phiP = 0.6, phi1 = 0.7, phi2 = 0.8, phi3 = 0.92, phi4 = 0.95, phi5 = 0.95,
@@ -556,8 +548,6 @@ stable <- ea$stable.stage
 
 stableAge <- stable[1:8]/sum(stable[1:8])
 stableAgeM <- stable[9:15]/sum(stable[9:15])
-
-###??### #end cleanup notes
 
 #for pups
 v1 <- dUnif(c(pups_reg_med[1,1]/2*0.9, pups_reg_med[1,2]/2*0.9,
@@ -677,7 +667,7 @@ len_v7m <- dim(v7m)[2]
 
 ```
 
-```{r option null}
+```{r null model}
 
 SSL_IPM <- nimbleCode({
   
@@ -730,81 +720,6 @@ SSL_IPM <- nimbleCode({
   } #i male
   
   ### Priors
-  #fixed categorical effect of natal region
-  # b.regP[2] <- 0
-  # b.reg1[2] <- 0
-  # b.reg2[2] <- 0
-  # b.regPB[1] <- 0
-  # b.regB[1] <- 0
-  # b.reg.psi3[2] <- 0
-  # b.reg.psi4[2] <- 0
-  # b.reg.psi5[2] <- 0
-  # b.reg.psiB[2] <- 0
-  # b.reg.psiNB[2] <- 0
-  # 
-  # for (r in c(1,3,4,5,6)) {
-  # b.regP[r] ~ dnorm(0, sd = s.regP)
-  # b.reg1[r] ~ dnorm(0, sd = s.reg1)
-  # b.reg2[r] ~ dnorm(0, sd = s.reg2)
-  
-  # b.reg.psi3[r] ~ dnorm(0, sd = s.psiPB)
-  # b.reg.psi4[r] ~ dnorm(0, sd = s.psiPB)
-  # b.reg.psi5[r] ~ dnorm(0, sd = s.psiPB)
-  # b.reg.psiB[r] ~ dnorm(0, sd = s.psiB)
-  # b.reg.psiNB[r] ~ dnorm(0, sd = s.psiB)
-  # }
-  # 
-  # b.regPB[2] ~ dnorm(0, sd = s.regPB)
-  # b.regB[2] ~ dnorm(0, sd = s.regB)
-  
-  # s.regP ~ dexp(1)
-  # s.reg1 ~ dexp(1)
-  # s.reg2 ~ dexp(1)
-  # s.regPB ~ dexp(1)
-  # s.regB ~ dexp(1)
-  # # s.regNB ~ dexp(1)
-  # s.psiPB ~ dexp(1)
-  # s.psiB ~ dexp(1)
-  # # s.eps.reg ~ dexp(1)
- 
-  #  for (j in 1:4) {
-  #   epsP[j,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.epsP, c)
-  #   eps1[j,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.eps1, c)
-  #   eps2[j,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.eps2, c)
-  #   epsB[j,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.epsB, c)
-  # } 
-  # 
-  # epsP[5:6,1:(n_occasions-1)] <- 0
-  # eps1[5:6,1:(n_occasions-1)] <- 0
-  # eps2[5:6,1:(n_occasions-1)] <- 0
-  # epsB[5:6,1:(n_occasions-1)] <- 0
-  
-  # epsPB[1,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.epsPB, c)
-  # epsPB[2,1:(n_occasions-1)] <- 0
-  # 
-  # eps.psiPB[1,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.eps.psi, c)
-  # eps.psiB[1,1:(n_occasions-1)] ~ dcar_normal(adj[1:L], weights[1:L], num[1:(n_occasions - 1)], t.eps.psi, c)
-  # 
-  # eps.psiPB[2,1:(n_occasions-1)] <- 0
-  # eps.psiB[2,1:(n_occasions-1)] <- 0
-  
-  # t.epsP <- 1/(s.epsP*s.epsP) #precision
-  # s.epsP ~ dexp(1) #standard deviation
-  # t.eps1 <- 1/(s.eps1*s.eps1)
-  # s.eps1 ~ dexp(1)
-  # t.eps2 <- 1/(s.eps2*s.eps2)
-  # s.eps2 ~ dexp(1)
-  # t.epsPB <- 1/(s.epsPB*s.epsPB)
-  # s.epsPB ~ dexp(1)
-  # t.epsB <- 1/(s.epsB*s.epsB)
-  # s.epsB ~ dexp(1)
-  # t.eps.psi <- 1/(s.eps.psi*s.eps.psi)
-  # s.eps.psi ~ dexp(1)
-    
-    # for (t in 1:(n_occasions)) {
-    #   eps.p[t] ~ dnorm(0, sd = sigma.p)
-    # }
-    # sigma.p ~ dexp(1)
   
   #intercepts  
   mu.psi3 <- log(int.psi3/(1-int.psi3))
@@ -974,15 +889,6 @@ for (t in (fc[i] + 1):n_occasions) {
     
     for (j in 1:n_r) {
    # total females
-   # Ntot_f[1,j] ~ dpois(round(np_reg_med[1,j]*prop_f))
-   # lNtot_f[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*prop_f), sdlog = log(sigma.popInit))
-   # Ntot_f[1,j] <- round(exp(lNtot_f[j]))
-   
-   # Ntot_f[1,j] ~ dnorm(np_reg_med[1,j]*prop_f, sd = sigma.popInit)
-   # Ntot_f[1,j] <- round(np_reg_med[1,j]*prop_f)
-      
-  # establish first year of population using conditional binomials
-   # N_f[1,1,j] <- round(pups_reg_med[1,j]/2) #pups in 2000
       
       N_f[1,1,j] ~ dcat(v1[j,1:len_v1])
       N_f[2,1,j] ~ dcat(v2[j,1:len_v2])
@@ -1002,34 +908,13 @@ for (t in (fc[i] + 1):n_occasions) {
       N_m[6,1,j] ~ dcat(v6m[j,1:len_v6m])
       N_m[7,1,j] ~ dcat(v7m[j,1:len_v7m])
       Ntot_m[1,j] <- sum(N_m[1:7,1,j])
-   
-   # for(g in 2:(G-1)){
-   #  N_f[g,1,j] ~ dbin(stableAge[g]/(1-sum(stableAge[1:(g-1)])), Ntot_f[1,j] - sum(N_f[1:(g-1),1,j]) )
-   # }
-   # 
-   # # group G: deterministic
-   # N_f[G,1,j] <- Ntot_f[1,j] - sum(N_f[1:(G-1),1,j])
       
    #  #total breeders and non-breeders
     N_B[1,j] <-  N_f[7,1,j]  # total breeders
     N_NB[1,j] <- N_f[8,1,j] # total NB
     
     ###MALES
-    # Ntot_m[1,j] ~ dpois(np_reg_med[1,j]*(1-prop_f)) #total males
-    # lNtot_m[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*(1-prop_f)), sdlog = log(sigma.popInit)) 
-    # Ntot_m[1,j] <- round(exp(lNtot_m[j]))
-    
-     # Ntot_m[1,j] ~ dnorm(np_reg_med[1,j]*(1-prop_f), sd = sigma.popInit)
-   #  Ntot_m[1,j] <- round(np_reg_med[1,j]*(1-prop_f))
-   # 
-   #  N_m[1,1,j] <- round(pups_reg_med[1,j]/2) #pups
-   # 
-   #  for(h in 2:(H-1)){
-   #  N_m[h,1,j] ~ dbin(stableAgeM[h]/(1-sum(stableAgeM[1:(h-1)])), Ntot_m[1,j] - sum(N_m[1:(h-1),1,j]) )
-   #  }
-   # 
    # # group H: deterministic
-   # N_m[H,1,j] <- Ntot_m[1,j] - sum(N_m[1:(H-1),1,j])
     N_A1[1,j] <- N_m[6,1,j] #new adults from 5yos
     N_Aplus[1,j] <- N_m[7,1,j]  #repeat adults 7+
     Ntot[1,j] <- Ntot_f[1,j] + Ntot_m[1,j]
@@ -1218,19 +1103,20 @@ foreach(i = 1:nc) %dopar% {
                  setSeed = FALSE, progressBar = TRUE, samplesAsCodaMCMC = TRUE) 
   
   version <- 'null'
-  saveRDS(out, here('results', 'best', paste("out.parallel-", version, "spStable-",i,".RDS", sep = ""))) 
+  saveRDS(out, here('results', paste("out.parallel-", version, i, ".RDS", sep = ""))) 
   
 } # closes parallel loop
 
-stopCluster(cl)
-t.end <- Sys.time() 
-(runTime <- t.end - t.start)
+# stopCluster(cl)
+# t.end <- Sys.time() 
+# (runTime <- t.end - t.start)
 
+#these results not included in the repository
 version <- 'null'
 
-out_1 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-1.RDS", sep = "")))
-out_2 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-2.RDS", sep = "")))
-out_3 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-3.RDS", sep = "")))
+out_1 <- readRDS(here::here('results', paste("out.parallel-", version, "1.RDS", sep = "")))
+out_2 <- readRDS(here::here('results', paste("out.parallel-", version, "2.RDS", sep = "")))
+out_3 <- readRDS(here::here('results', paste("out.parallel-", version, "3.RDS", sep = "")))
 
 # combine them and make an mcmc object
 library(coda)
@@ -1239,7 +1125,7 @@ out <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
 
 ```
 
-```{r option 2.2}
+```{r random effects model}
 
 SSL_IPM <- nimbleCode({
   
@@ -1547,16 +1433,7 @@ for (t in (fc[i] + 1):n_occasions) {
     # sigma.popInit ~ dexp(1)
     
     for (j in 1:n_r) {
-   # total females
-   # Ntot_f[1,j] ~ dpois(round(np_reg_med[1,j]*prop_f))
-   # lNtot_f[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*prop_f), sdlog = log(sigma.popInit))
-   # Ntot_f[1,j] <- round(exp(lNtot_f[j]))
-   
-   # Ntot_f[1,j] ~ dnorm(np_reg_med[1,j]*prop_f, sd = sigma.popInit)
-   # Ntot_f[1,j] <- round(np_reg_med[1,j]*prop_f)
-      
-  # establish first year of population using conditional binomials
-   # N_f[1,1,j] <- round(pups_reg_med[1,j]/2) #pups in 2000
+   #females
       
       N_f[1,1,j] ~ dcat(v1[j,1:len_v1])
       N_f[2,1,j] ~ dcat(v2[j,1:len_v2])
@@ -1576,32 +1453,12 @@ for (t in (fc[i] + 1):n_occasions) {
       N_m[6,1,j] ~ dcat(v6m[j,1:len_v6m])
       N_m[7,1,j] ~ dcat(v7m[j,1:len_v7m])
       Ntot_m[1,j] <- sum(N_m[1:7,1,j])
-   
-   # for(g in 2:(G-1)){
-   #  N_f[g,1,j] ~ dbin(stableAge[g]/(1-sum(stableAge[1:(g-1)])), Ntot_f[1,j] - sum(N_f[1:(g-1),1,j]) )
-   # }
-   # 
-   # # group G: deterministic
-   # N_f[G,1,j] <- Ntot_f[1,j] - sum(N_f[1:(G-1),1,j])
       
    #  #total breeders and non-breeders
     N_B[1,j] <-  N_f[7,1,j]  # total breeders
     N_NB[1,j] <- N_f[8,1,j] # total NB
     
     ###MALES
-    # Ntot_m[1,j] ~ dpois(np_reg_med[1,j]*(1-prop_f)) #total males
-    # lNtot_m[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*(1-prop_f)), sdlog = log(sigma.popInit)) 
-    # Ntot_m[1,j] <- round(exp(lNtot_m[j]))
-    
-     # Ntot_m[1,j] ~ dnorm(np_reg_med[1,j]*(1-prop_f), sd = sigma.popInit)
-   #  Ntot_m[1,j] <- round(np_reg_med[1,j]*(1-prop_f))
-   # 
-   #  N_m[1,1,j] <- round(pups_reg_med[1,j]/2) #pups
-   # 
-   #  for(h in 2:(H-1)){
-   #  N_m[h,1,j] ~ dbin(stableAgeM[h]/(1-sum(stableAgeM[1:(h-1)])), Ntot_m[1,j] - sum(N_m[1:(h-1),1,j]) )
-   #  }
-   # 
    # # group H: deterministic
    # N_m[H,1,j] <- Ntot_m[1,j] - sum(N_m[1:(H-1),1,j])
     N_A1[1,j] <- N_m[6,1,j] #new adults from 5yos
@@ -1750,14 +1607,6 @@ inits <- list(int.phiP = phi_ests[1,1], int.phiPM = phi_ests[8,1],
               eps.psiB = array(0, dim = c(4, n_occasions-1)),
               eps.psiNB = array(0, dim = c(4, n_occasions-1)),
               
-              # epsPB = rep(0, n_occasions-1),
-              # epsB = rep(0, n_occasions-1),
-              # epsP = rep(0, n_occasions-1), eps1 = rep(0, n_occasions-1), eps2 = rep(0, n_occasions-1),
-              # epsPB = rep(0, n_occasions-1), epsB = rep(0, n_occasions-1),
-              # epsNB = rep(0, n_occasions-1), epsBM = rep(0, n_occasions-1),
-              # eps.psiPB = rep(0, n_occasions-1),
-              # eps.psiB = rep(0, n_occasions-1),
-              # sigmaPB = 1, sigmaP = 1, sigmaB = 1, sigma2 = 1, sigma1 = 1, 
               p.delB = c(0.4, 0.5, 0.75), 
               b.massP = 0, b.massPM = 0, 
               b.mass1 = 0, b.mass1M = 0, 
@@ -1771,15 +1620,11 @@ params <- c('phiP.prob', 'phi1.prob', 'phi2.prob', 'phi3.prob', 'phi4.prob', 'ph
             'phiPM.prob', 'phi1M.prob', 'phi2M.prob', 'phi3M.prob', 'phi4M.prob', 'phi5M.prob',
             'phiB.prob', 'phiNB.prob', 'phiBM.prob',
             'psi3.prob', 'psi4.prob', 'psi5.prob', 'psiB.prob', 'psiNB.prob',
-            'epsP', 'eps1', 'eps2', 'epsPB','epsB', 'eps.psiPB', 'eps.psiB', #'eps.psiNB',
-            'b.delB', 'p.delB', 'b.eff', 'eps.p', 
-             # 'sigmaP', 'sigma1', 'sigma2', 'sigmaPB', 'sigmaB',
-            # 'sigma.psiPB', 'sigma.psiB', 
-            'sigma.p', 
+            'epsP', 'eps1', 'eps2', 'epsPB','epsB', 'eps.psiPB', 'eps.psiB', 
+            'b.delB', 'p.delB', 'b.eff', 'eps.p',             'sigma.p', 
             'b.massP', 'b.mass1', 'b.massPM', 'b.mass1M', 
-            'Ntot', 'Ntot_f', 'N_f', 'Ntot_m', 'N_m', #'lNtot_f', 'lNtot_m', 
-            # 'sigma.popInit',
-            'b.regP', 'b.reg1', 'b.reg2', 'b.regPB', 'b.regB', #'b.regNB',
+            'Ntot', 'Ntot_f', 'N_f', 'Ntot_m', 'N_m', 
+            'b.regP', 'b.reg1', 'b.reg2', 'b.regPB', 'b.regB', 
             'b.reg.psi3', 'b.reg.psi4', 'b.reg.psi5', 'b.reg.psiB', 'b.reg.psiNB')
 
 ### run model
@@ -1789,11 +1634,7 @@ ni = 35000; nc = 3; nb = 20000; nt = 2; adaptInterval = 100
 t.start <- Sys.time() # start clock for whole process
 
 cores=detectCores() # how many cores are available
-# this line is essential on mac, not sure about pc
-# does not impact performance though
 used.cores = min(nc, cores) # good practice to not max out all available cores. 
-# my general workflow is that in each instance of R I set up a script like this 
-# that runs 3 chains in parallel (1 chain per core)
 cl <- makeCluster(nc, setup_strategy = "sequential") # make cluster of cores
 registerDoParallel(cl) 
 
@@ -1818,21 +1659,20 @@ foreach(i = 1:nc) %dopar% { # parallel version of for loop
   out <- runMCMC(Cmcmc, niter = ni, nburnin = nb , nchains = 1, inits = inits,
                  setSeed = FALSE, progressBar = TRUE, samplesAsCodaMCMC = TRUE) 
   
-  version <- '2.2_NADO'
-  saveRDS(out, here('results', 'best', paste("out.parallel-", version, "spStable-",i,".RDS", sep = ""))) # save each chain with a diff name
+  version <- 'RE'
+  saveRDS(out, here('results', paste("out.parallel-", version, "-", i, ".RDS", sep = ""))) # save each chain with a diff name
   
   
 } # closes parallel loop
 stopCluster(cl) # important to do this to stop running things in parallel
+# t.end <- Sys.time() # end clock
+# (runTime <- t.end - t.start)
 
-t.end <- Sys.time() # end clock
-(runTime <- t.end - t.start)
-
-version <- '2.2_NADO'
-
-out_1 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-1.RDS", sep = "")))
-out_2 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-2.RDS", sep = "")))
-out_3 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-3.RDS", sep = "")))
+#these results not in the repository
+version <- 'RE'
+out_1 <- readRDS(here::here('results', paste("out.parallel-", version, "-1.RDS", sep = "")))
+out_2 <- readRDS(here::here('results', paste("out.parallel-", version, "-2.RDS", sep = "")))
+out_3 <- readRDS(here::here('results', paste("out.parallel-", version, "-3.RDS", sep = "")))
 
 # combine them and make an mcmc object
 library(coda)
@@ -1841,7 +1681,7 @@ out <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
 
 ```
 
-```{r option 2.2 env}
+```{r random effects and env cov model}
 
 SSL_IPM <- nimbleCode({
   
@@ -2165,15 +2005,6 @@ for (t in (fc[i] + 1):n_occasions) {
     
     for (j in 1:n_r) {
    # total females
-   # Ntot_f[1,j] ~ dpois(round(np_reg_med[1,j]*prop_f))
-   # lNtot_f[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*prop_f), sdlog = log(sigma.popInit))
-   # Ntot_f[1,j] <- round(exp(lNtot_f[j]))
-   
-   # Ntot_f[1,j] ~ dnorm(np_reg_med[1,j]*prop_f, sd = sigma.popInit)
-   # Ntot_f[1,j] <- round(np_reg_med[1,j]*prop_f)
-      
-  # establish first year of population using conditional binomials
-   # N_f[1,1,j] <- round(pups_reg_med[1,j]/2) #pups in 2000
       
       N_f[1,1,j] ~ dcat(v1[j,1:len_v1])
       N_f[2,1,j] ~ dcat(v2[j,1:len_v2])
@@ -2194,31 +2025,13 @@ for (t in (fc[i] + 1):n_occasions) {
       N_m[7,1,j] ~ dcat(v7m[j,1:len_v7m])
       Ntot_m[1,j] <- sum(N_m[1:7,1,j])
    
-   # for(g in 2:(G-1)){
-   #  N_f[g,1,j] ~ dbin(stableAge[g]/(1-sum(stableAge[1:(g-1)])), Ntot_f[1,j] - sum(N_f[1:(g-1),1,j]) )
-   # }
-   # 
    # # group G: deterministic
-   # N_f[G,1,j] <- Ntot_f[1,j] - sum(N_f[1:(G-1),1,j])
-      
+
    #  #total breeders and non-breeders
     N_B[1,j] <-  N_f[7,1,j]  # total breeders
     N_NB[1,j] <- N_f[8,1,j] # total NB
     
     ###MALES
-    # Ntot_m[1,j] ~ dpois(np_reg_med[1,j]*(1-prop_f)) #total males
-    # lNtot_m[j] ~ dlnorm(meanlog = log(np_reg_med[1,j]*(1-prop_f)), sdlog = log(sigma.popInit)) 
-    # Ntot_m[1,j] <- round(exp(lNtot_m[j]))
-    
-     # Ntot_m[1,j] ~ dnorm(np_reg_med[1,j]*(1-prop_f), sd = sigma.popInit)
-   #  Ntot_m[1,j] <- round(np_reg_med[1,j]*(1-prop_f))
-   # 
-   #  N_m[1,1,j] <- round(pups_reg_med[1,j]/2) #pups
-   # 
-   #  for(h in 2:(H-1)){
-   #  N_m[h,1,j] ~ dbin(stableAgeM[h]/(1-sum(stableAgeM[1:(h-1)])), Ntot_m[1,j] - sum(N_m[1:(h-1),1,j]) )
-   #  }
-   # 
    # # group H: deterministic
    # N_m[H,1,j] <- Ntot_m[1,j] - sum(N_m[1:(H-1),1,j])
     N_A1[1,j] <- N_m[6,1,j] #new adults from 5yos
@@ -2417,8 +2230,8 @@ foreach(i = 1:nc) %dopar% {
   out <- runMCMC(Cmcmc, niter = ni, nburnin = nb , nchains = 1, inits = inits,
                  setSeed = FALSE, progressBar = TRUE, samplesAsCodaMCMC = TRUE) 
   
-  version <- '2.2_env_track_'
-  saveRDS(out, here('results', 'best', paste("out.parallel-", version, "spStable-",i,".RDS", sep = ""))) 
+  version <- 'env'
+  saveRDS(out, here('results', paste("out.parallel-", version, "-",i,".RDS", sep = ""))) 
   
 } # parallel loop
 
@@ -2427,34 +2240,33 @@ stopCluster(cl)
 t.end <- Sys.time() 
 (runTime <- t.end - t.start)
 
-version <- '2.2_env_track_'
+version <- 'env'
 
-out_1 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-1.RDS", sep = "")))
-out_2 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-2.RDS", sep = "")))
-out_3 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "spStable-3.RDS", sep = "")))
+out_1 <- readRDS(here::here('results', paste("out.parallel-", version, "-1.RDS", sep = "")))
+out_2 <- readRDS(here::here('results', paste("out.parallel-", version, "-2.RDS", sep = "")))
+out_3 <- readRDS(here::here('results', paste("out.parallel-", version, "-3.RDS", sep = "")))
 
 # combine them and make an mcmc object
 library(coda)
 out <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
 
+post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+post <- as.matrix(post)
+
+post_sum <- data.frame(
+  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+post_sum$variable <- row.names(post_sum)
 
 ```
 
 
+```{r age structure posteriors, etc}
 
-```{r sensitivity}
-
-    out_1 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-1.RDS", sep = "")))
-    out_2 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-2.RDS", sep = "")))
-    out_3 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-3.RDS", sep = "")))
-
-    post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
-    post <- as.matrix(post)
-#     
 #from parallel run
 nSamples <- dim(post)[1]
 n_occasions <- 19
-# nyears.burnin <- 8
 nyears.burnin <- 0
 
 #get full posteriors rather than just summary stats
@@ -2472,6 +2284,37 @@ phi_post <- post[,grepl('.prob', colnames(post))] %>% reshape2::melt() %>%
   transform(variable = sub("\\[.*", "", Var2)) %>%
   transform(variable = gsub('.prob', '', variable))
 
+#summarize phi and psi posteriors
+phi_post_sum <- post_sum %>% filter(grepl('.prob', variable)) %>%
+  filter(grepl('phi', variable)) %>%
+  transform(region = gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', variable)) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', variable)))) %>%
+  transform(variable = sub("\\[.*", "", variable)) %>%
+  transform(variable = gsub('.prob', '', variable)) %>%
+  transform(variable = factor(variable, levels = c('phiP', 'phiPM', 'phi1', 'phi1M', 'phi2', 'phi2M',
+                            'phi3', 'phi3M', 'phi4', 'phi4M', 'phi5', 
+                            'phi5M', 'phiB', 'phiNB', 'phiBM', 'psi3', 'psi4', 
+                            'psi5', 'psiB', 'psiNB'))) %>%
+  # transform(region = factor(region, levels = c(3,1,4,2,5,6),
+  #                           labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+  #                                      'E.Aleutians', 'C.Aleutians', 'W.Aleutians')))
+transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
+#psi
+psi_post_sum <- post_sum %>% filter(grepl('.prob', variable)) %>%
+  filter(grepl('psi', variable)) %>%
+  transform(region = gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', variable)) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', 
+                                                variable)))) %>%
+  transform(variable = sub("\\[.*", "", variable)) %>%
+  transform(variable = gsub('.prob', '', variable)) %>%
+  # transform(region = factor(region, levels = c(3,1,4,2,5,6),
+  #                           labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+  #                                      'E.Aleutians', 'C.Aleutians', 'W.Aleutians'))) %>%
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
 #### lambda array; want lambda from Ntot == 2000-2018
 ## Ntot[9,r] == 2000, so want growth rates starting from t = 9/2000 (t-1) to 10/2001 (t)
 # t == 11/2002; t == 12/2003; t == 13/2004; t == 14/2005; t == 15/2006; t == 16/2007; t == 17/2008;
@@ -2488,6 +2331,7 @@ for (r in 1:6) {
   }
 }
 
+#this takes a long time - load in csv below
 # phiP.corr <- phiPM.corr <- phi1.corr <- phi2.corr <- phi3.corr <- phi4.corr <- phi5.corr <- phiB.corr <- psi4.corr <- psiB.corr <- array(NA, dim = c(nSamples, 4, n_occasions-1))
 # 
 # 
@@ -2626,9 +2470,10 @@ lambda_long <- lambda_med %>% reshape2::melt(value.name = 'lambda_med') %>%
   transform(region = factor(region, levels = 1:6, labels = c("C.GULF", "E.ALEU", "E.GULF",
                                                         "W.GULF", "C.ALEU", "W.ALEU")))
 
+#regional labels aren't the same - merge not working
 corr_plot_vals <- bind_rows(phi_post_sum %>% filter(variable != 'phiNB'), 
                             psi_post_sum %>% filter(variable %nin% c('psiNB', 'psi3', 'psi5'))) %>%
-  merge(lambda_long, by = c('region', 'year')) 
+  merge(lambda_long, by = c('region', 'year'), all = T) 
 
 #make 'labels' df
 # corr_labels <- data.frame(variable = c('Adult B survival', 'Adult NB survival', 
@@ -2659,61 +2504,13 @@ corr_plot <- ggplot(corr_plot_vals %>% filter(!grepl('M', variable)),
   # scale_fill_manual(values = rainbow2[-c(1,4)])
   scale_fill_manual(values=lacroix_palette("PeachPear",type = "continuous", n = 9)) 
 
-```
 
-```{r env covs}
-
-version <- '2.2_env_track_'
-out_1 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-1.RDS")))
-out_2 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-2.RDS")))
-out_3 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-3.RDS")))
-
-post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
-post <- as.matrix(post)
-
-post_sum <- data.frame(
-  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
-  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
-  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
-post_sum$variable <- row.names(post_sum)
-
-covs <- post_sum %>% 
-  filter(variable %in% c('b.npgoP', 'b.npgo1', 'b.npgo.psi', 'b.npgoB', 'b.sstP', 'b.sst1', 'b.sst.psi', 'b.sstB')) %>%
-  transform(cov = ifelse(grepl('sst', variable), 'SST', 'NPGO')) %>%
-  transform(rate = ifelse(grepl('P', variable), 'P', ifelse(grepl(1, variable), '1',
-                                                            ifelse(grepl('B', variable), 'B', 'psi')))) %>%
-  transform(rate = factor(rate, levels = c('P', '1', 'B', 'psi')))
-
-ggplot(covs %>% filter(cov == 'NPGO'), aes(rate, med)) +
-  geom_point() +
-  geom_linerange(aes(ymin = lower, ymax = upper)) +
-  geom_hline(aes(yintercept = 0), linetype = 'dotted', color = 'red') +
-  ylab('Logit-scale effect') + xlab('Demographic rate') +
-  facet_grid(~cov) +
-  pres_theme_180() +
-  scale_x_discrete(labels = c('P' = parse(text = TeX('$phi_P$')), 
-                              '1' = parse(text = TeX('$phi_{1,2}$')),
-                              'B' = parse(text = TeX('$phi_B$')), 
-                              'psi' = parse(text = TeX('$psi$'))))
 
 ```
 
-```{r base projection prep}
+```{r null model projection}
 
-version <- '2.2'
-out_1 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-1.RDS")))
-out_2 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-2.RDS")))
-out_3 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-3.RDS")))
-
-post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
-post <- as.matrix(post)
-
-post_sum <- data.frame(
-  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
-  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
-  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
-post_sum$variable <- row.names(post_sum)
-
+#prep storage, posteriors, etc
 all_pars <- colnames(post)
 eps_pars <- all_pars[which(grepl('eps', all_pars))]
 
@@ -2761,7 +2558,7 @@ N_m_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_m', colnames(post))] %>% r
   transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
 
 
-#rebuild in array format
+#rebuild in array format for faster simulation loops
 N_f <- array(NA, dim = c(nSamp, G_f, (n_occasions+nyears.burnin), n_r))
 for (r in 1:n_r) {
   for (a in 1:G_f) {
@@ -2908,9 +2705,6 @@ for (r in 1:n_r) {
     }
   }
 
-```
-
-```{r base proj}
 
 #storage for sim/region loop
 Ntot.sim <- array(NA, dim = c(nSamp, n_occasions+nyears.burnin+nyears.proj, nSims, n_r))
@@ -3075,11 +2869,11 @@ Ntot.sim[1:nSamp,,sim,r] <- as.matrix(Ntot)
 } #region
 
 ## save objects
-saveRDS(Ntot.sim, file = here::here('results', 'projections', 'Ntot.rds'))
-saveRDS(lambda.mean, file = here::here('results', 'projections', 'lambda.rds'))
-saveRDS(p.ext, file = here::here('results', 'projections', 'p.ext.rds'))
-saveRDS(p.ad.ext, file = here::here('results', 'projections', 'p.ad.ext.rds'))
-saveRDS(p.neg, file = here::here('results', 'projections', 'p.neg.rds'))
+# saveRDS(Ntot.sim, file = here::here('results', 'projections', 'Ntot.rds'))
+# saveRDS(lambda.mean, file = here::here('results', 'projections', 'lambda.rds'))
+# saveRDS(p.ext, file = here::here('results', 'projections', 'p.ext.rds'))
+# saveRDS(p.ad.ext, file = here::here('results', 'projections', 'p.ad.ext.rds'))
+# saveRDS(p.neg, file = here::here('results', 'projections', 'p.neg.rds'))
 
 #want mean and CI for each time step and region
 Ntot_mean <- apply(Ntot.sim, c(4,2), median)
@@ -3146,16 +2940,16 @@ c <- ggplot(p.neg, aes(y=value, group = factor(reg), color = factor(reg))) +
   theme_classic() +
   theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
 
+
+
 ```
 
 
+```{r env covs}
 
-```{r env projection prep}
-
-version <- '2.2_env_track_'
-out_1 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-1.RDS")))
-out_2 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-2.RDS")))
-out_3 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-3.RDS")))
+out_1 <- readRDS(here::here('results', paste0("out.parallel-env-1.RDS")))
+out_2 <- readRDS(here::here('results', paste0("out.parallel-env-2.RDS")))
+out_3 <- readRDS(here::here('results', paste0("out.parallel-env-3.RDS")))
 
 post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
 post <- as.matrix(post)
@@ -3165,6 +2959,30 @@ post_sum <- data.frame(
   lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
   upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
 post_sum$variable <- row.names(post_sum)
+
+covs <- post_sum %>% 
+  filter(variable %in% c('b.npgoP', 'b.npgo1', 'b.npgo.psi', 'b.npgoB', 'b.sstP', 'b.sst1', 'b.sst.psi', 'b.sstB')) %>%
+  transform(cov = ifelse(grepl('sst', variable), 'SST', 'NPGO')) %>%
+  transform(rate = ifelse(grepl('P', variable), 'P', ifelse(grepl(1, variable), '1',
+                                                            ifelse(grepl('B', variable), 'B', 'psi')))) %>%
+  transform(rate = factor(rate, levels = c('P', '1', 'B', 'psi')))
+
+ggplot(covs %>% filter(cov == 'NPGO'), aes(rate, med)) +
+  geom_point() +
+  geom_linerange(aes(ymin = lower, ymax = upper)) +
+  geom_hline(aes(yintercept = 0), linetype = 'dotted', color = 'red') +
+  ylab('Logit-scale effect') + xlab('Demographic rate') +
+  facet_grid(~cov) +
+  pres_theme_180() +
+  scale_x_discrete(labels = c('P' = parse(text = TeX('$phi_P$')), 
+                              '1' = parse(text = TeX('$phi_{1,2}$')),
+                              'B' = parse(text = TeX('$phi_B$')), 
+                              'psi' = parse(text = TeX('$psi$'))))
+
+```
+
+
+```{r env covariate projection scenarios}
 
 all_pars <- colnames(post)
 eps_pars <- all_pars[which(grepl('eps', all_pars))]
@@ -3263,15 +3081,12 @@ for (n in 1:nSims) {
 picks[n,] <- sample(1:(n_occasions-1), nyears.proj, replace = T)
 }
 
-#environmental scenarios
+#### environmental scenarios
 npgo_sd_obs <- sd(npgo_dat)
 npgo_mean_obs <- mean(npgo_dat)
 
 sst_sd_obs <- sd(sst_dat)
 sst_mean_obs <- mean(sst_dat)
-
-# pr <- 0.25
-# pr_big <- 0.5
 
 pr <- 0.75
 pr_big <- 0.99
@@ -3332,7 +3147,6 @@ for (n in 1:nSims) {
   sst_preds7[n,] <- scale(rnorm(nyears.proj, sst_mean_obs+sst_mean_obs*pr, sst_sd_obs+sst_sd_obs*pr), scale = F)
 }
 
-
 #8: lower mean and sd's historical 
 npgo_preds8 <- array(NA, dim = c(nSims, nyears.proj))
 sst_preds8 <- array(NA, dim = c(nSims, nyears.proj))
@@ -3351,11 +3165,9 @@ for (n in 1:nSims) {
 
 scenarios <- c(1:9)
 
+### projections
 
-```
-
-```{r env proj -- npgo and sst scenarios}
-
+#storage
 Ntot.sim.cov <- lambda.mean.sim.cov <- p.ext.sim.cov <- p.ad.ext.sim.cov <- p.neg.sim.cov <- data.frame()
 
 #storage for sim/region loop
@@ -3711,12 +3523,11 @@ t.end <- Sys.time() # end clock
 (runTime <- t.end - t.start)
 
 ## save objects
-tag <- 'extreme_long'
-saveRDS(Ntot.sim.cov, file = here::here('results', 'projections', paste0('Ntot_cov9', tag, '.rds')))
-saveRDS(lambda.mean.sim.cov, file = here::here('results', 'projections', paste0('lambda_cov9', tag, '.rds')))
-saveRDS(p.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ext_cov9', tag, '.rds')))
-saveRDS(p.ad.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ad.ext_cov9', tag, '.rds')))
-saveRDS(p.neg.sim.cov, file = here::here('results', 'projections', paste0('p.neg_cov9', tag, '.rds')))
+# saveRDS(Ntot.sim.cov, file = here::here('results', 'projections', paste0('Ntot_env.rds')))
+# saveRDS(lambda.mean.sim.cov, file = here::here('results', 'projections', paste0('lambda_env.rds')))
+# saveRDS(p.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ext_env.rds')))
+# saveRDS(p.ad.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ad.ext_env.rds')))
+# saveRDS(p.neg.sim.cov, file = here::here('results', 'projections', paste0('p.neg_env.rds')))
 
 # ggplot(Ntot.sim.cov,
 #        aes(year, mean, group = factor(sc), col = factor(sc))) +

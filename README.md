@@ -16,7 +16,7 @@ Understanding spatio-temporal variability in demography and the influence of env
 
 #### [Scripts](./scripts)
 
-Contains the script to process raw data and run all analyses. 
+Contains the script to process raw data and run all analyses. Code to generate figures is available upon request but generally not extensively included here. 
 
 - SSL_wDPS_IPM_data.Rmd processes mark-resight observations into annual resightings histories.  
 - SSL_wDPS_IPM.Rmd loads in processed data, NIMBLE functions script, and runs estimation models and viability simulation projections including environmental variability scenarios. 
@@ -27,9 +27,9 @@ Contains raw and processed data necessary for running the model, including mark-
 
 #### [Results](./results)
 
-Contains raw and processed results.  
+Contains raw and processed results. Processed results include results for models and population projections run with and without environmental covariates. 
 
-#### Required Packages and Versions Used 
+### Required Packages and Versions Used 
 
 Hmisc_4.5-0       
 ggstance_0.3.5   
@@ -49,6 +49,7 @@ readr_2.0.1
 here_1.0.1        
 tidyr_1.1.3       
 lubridate_1.7.10 
+latex2exp_0.9.5
 
 ### Details of Article 
 
@@ -56,4 +57,10 @@ Warlick AJ, DS Johnson, TS Gelatt, and SJ Converse. 2022. Examining the effect o
 
 ### How to Use this Repository 
 
-(Provide some guidance here to users, is there an order in which they should run things, for example?)  
+This repository can be used to process and analyze count survey and mark-resight data within an integrated population model (IPM) and conduct population viability projection simulations under various scenarios. Note, these markdown documents are not intended to be knitted, but instead chunks should be run sequentially.
+
+First, interested users would use the *SSL_wDPS_IPM_data.Rmd* file to process mark-resight data. Then, processed data (mark-resight, abundance index data, and covariates) can be loaded into *SSL_wDPS_IPM.Rmd* to configure initial values, calculate stable age proportions for initiating the population model, and run integrated models in parallel using NIMBLE with and without environmental covariates. Finally, code to set up and run population projections across environmental variability scenarios can be found in markdown code chunks 10-15. 
+
+
+
+
