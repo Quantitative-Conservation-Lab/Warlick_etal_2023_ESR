@@ -1,0 +1,1329 @@
+---
+title: ''
+date: ""
+output: 
+  bookdown::word_document2:
+    reference_docx: mytemplate.docx
+    keep_text: true
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, dpi = 300, message = FALSE, cache.lazy = F, fig.width = 4, fig.height = 3.5)
+
+#resources
+# https://www.gerkelab.com/blog/2019/04/manipulating-latex-in-rmd/ modifying latex styles
+# https://bookdown.org/yihui/bookdown/a-single-document.html #bookdown single-doc
+
+```
+
+```{r load packages, results = 'hide', message = FALSE}
+
+library(here) #v1.0.1
+library(dplyr) #v1.0.5
+library(tidyr) #v1.1.3
+library(reshape2) #v1.4.4
+library(ggplot2) #v3.3.3
+library(cowplot) #v1.1.1
+library(knitr) #v1.31
+library(stringr) #v1.4.0
+library(lubridate) #v1.7.10
+library(readr) #v2.0.1
+library(captioner) #v2.2.3
+library(coda)
+library(Hmisc)
+library(ggstance)
+library(LaCroixColoR)
+library(latex2exp)
+
+#functions to use for calling figures/tables
+figs <- captioner(prefix = "Figure")
+tbls <- captioner(prefix = "Table")
+
+source(here::here('scripts', 'PlotTheme.R'))
+
+
+
+```
+
+
+```{r figs and table load, echo = FALSE, results = 'hide'}
+
+map <- knitr::include_graphics(here::here('figures', 'map.pdf'))
+life_cyc <- knitr::include_graphics(here::here('figures', 'life_cycle.pdf'))
+dag <- knitr::include_graphics(here::here('figures', 'SSL_IPM_dag.pdf'))
+
+```
+
+```{r load results}
+
+brands_table <- read.csv(here::here('data', 'ProcData', 'brands.csv'))
+colnames(brands_table) <- gsub('X', '', colnames(brands_table))
+brands_table$Total <- rowSums(brands_table[,2:dim(brands_table)[2]])
+
+out_1 <- readRDS(here::here('results', 'best', paste("out.parallel-2.2_epsTrackspStable-1.RDS", sep = "")))
+out_2 <- readRDS(here::here('results', 'best', paste("out.parallel-2.2_epsTrackspStable-2.RDS", sep = "")))
+out_3 <- readRDS(here::here('results', 'best', paste("out.parallel-2.2_epsTrackspStable-3.RDS", sep = "")))
+
+post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+post <- as.matrix(post)
+    
+post_sum <- data.frame(
+  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+post_sum$variable <- row.names(post_sum)
+
+n_occasions <- 19
+nyears.burnin <- 0
+
+```
+
+```{r dem}
+
+phi_post_sum <- post_sum %>% filter(grepl('.prob', variable)) %>%
+  filter(grepl('phi', variable)) %>%
+  transform(region = gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', variable)) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', variable)))) %>%
+  transform(variable = sub("\\[.*", "", variable)) %>%
+  transform(variable = gsub('.prob', '', variable)) %>%
+  transform(variable = factor(variable, levels = c('phiP', 'phiPM', 'phi1', 'phi1M', 'phi2', 'phi2M',
+                            'phi3', 'phi3M', 'phi4', 'phi4M', 'phi5', 
+                            'phi5M', 'phiB', 'phiNB', 'phiBM', 'psi3', 'psi4', 
+                            'psi5', 'psiB', 'psiNB'))) %>%
+  # transform(region = factor(region, levels = c(3,1,4,2,5,6),
+  #                           labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+  #                                      'E.Aleutians', 'C.Aleutians', 'W.Aleutians')))
+transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
+#psi
+psi_post_sum <- post_sum %>% filter(grepl('.prob', variable)) %>%
+  filter(grepl('psi', variable)) %>%
+  transform(region = gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', variable)) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', 
+                                                variable)))) %>%
+  transform(variable = sub("\\[.*", "", variable)) %>%
+  transform(variable = gsub('.prob', '', variable)) %>%
+  # transform(region = factor(region, levels = c(3,1,4,2,5,6),
+  #                           labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+  #                                      'E.Aleutians', 'C.Aleutians', 'W.Aleutians'))) %>%
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
+RE_plot_vals <- bind_rows(psi_post_sum, phi_post_sum) %>%
+  filter(variable %in% c('phiP', 'phi1', 'phi2', 'phi3', 'phi4', 'phi5', 
+                                               'phiB', 'psi4', 'psiB') & region %nin% c('W.AI', 'C.AI')) %>%
+  transform(variable = factor(variable, levels = c('phiP', 'phi1', 'phi2', 'phi3', 'phi4', 'phi5', 
+                                               'phiB', 'psi4', 'psiB'),
+                            labels = c('phi[P]', 'phi[1]', 'phi[2]', 'phi[3]', 'phi[4]', 'phi[5]', 
+                                               'phi[B]', 'psi[4]', 'psi[B]')))
+
+phi_RE_plot <- ggplot(RE_plot_vals,
+       aes(year, med, color = factor(region), group = factor(region))) +
+  geom_errorbar(aes(x = year, ymin=lower, ymax=upper), position = position_dodge(0.5), 
+                width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) + 
+  geom_line(size = 0.7, position = position_dodge(0.5)) +
+  xlab('') + ylab(expression(paste('Survival and pupping probability'))) +
+  ggtitle('') +
+  facet_grid(variable ~ region, scales = 'free_y', labeller = 'label_parsed') +
+  plot_theme(legend.position = 'none', panel.border = element_rect(fill = NA),
+             plot.title = element_text(hjust = 0.5)) +
+  # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+  scale_color_manual(values = rainbow2[c(5,6,7,8)], name = '') +
+  scale_x_continuous(breaks = c(seq(1, 21, by = 5)), labels = c(seq(2000, 2020, by = 5)))
+
+####average over time for regional estimates
+phi_post <- phi_post_sum %>%
+  group_by(region, variable) %>%
+  dplyr::summarize(med = mean(med), upper = mean(upper), lower = mean(lower), .groups = 'keep')
+
+mus <- phi_post %>%
+  group_by(variable) %>%
+  dplyr::summarize(mu = mean(med), mu_low = mean(lower), mu_up = mean(upper)) %>%
+  transform(label = paste0('mu == ', round(mu,2)))
+
+#both sexes
+phi_post_adj <- phi_post %>% merge(mus, by = 'variable') %>%
+  transform(sex = ifelse(variable %in% c('phiP', 'phi1', 'phi2', 'phi3',
+                    'phi4', 'phi5', 'phiB', 'phiNB'), 'Female', 'Male')) %>%
+  transform(variable_new = gsub('M', '', variable)) %>%
+  transform(variable_new = factor(variable_new, levels = c('phiP', 'phi1', 'phi2', 'phi3', 'phi4', 'phi5',
+                                                           'phiB', 'phiNB'),
+                                  labels = c('phi[P]', 'phi[1]', 'phi[2]', 'phi[3]', 'phi[4]', 'phi[5]',
+                                                           'phi[B]', 'phi[NB]')))
+
+phi_plot <- ggplot(phi_post_adj,
+       aes(region, med, color = factor(region), group = factor(region))) +
+  geom_errorbar(aes(x = region, ymin=lower, ymax=upper), position = position_dodge(0.5),
+                width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) +
+  geom_hline(aes(yintercept = mu), linetype = 'dashed', color = 'black') +
+  geom_text(aes(label = label,
+                               group = variable, y = 0.1, x = 5), parse = T, inherit.aes = F,
+            colour = "black", size = 3) +
+  xlab('') + ylab(expression(paste('Survival probability ',  '(', phi, ')'))) +
+  ggtitle('') +
+  facet_grid(sex~variable_new, labeller = label_parsed) +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA),
+             plot.title = element_blank()) +
+  # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+  scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '')
+
+psi_post <- psi_post_sum %>%
+  group_by(region, variable) %>%
+  dplyr::summarize(med = mean(med), upper = mean(upper), lower = mean(lower), .groups = 'keep')
+
+mus_psi <- psi_post %>%
+  group_by(variable) %>%
+  dplyr::summarize(mu = mean(med)) %>%
+  transform(label = paste0('mu == ', round(mu,2)))
+
+psi_post <- psi_post %>% merge(mus_psi, by = 'variable')
+
+phi_psi_plot_vals <- phi_post %>% merge(mus, by = 'variable') %>%
+  filter(variable %in% c('phiP', 'phi1', 'phi2', 'phi3', 
+                    'phi4', 'phi5', 'phiB', 'phiNB')) %>%
+  bind_rows(psi_post) %>%
+  transform(variable = factor(variable, levels = c('phiP', 'phi1', 'phi2', 'phi3', 
+                    'phi4', 'phi5', 'phiB', 'phiNB', 'psi3', 'psi4', 'psi5', 'psiB', 'psiNB'),
+                    labels = c('phi[P]', 'phi[1]', 'phi[2]', 'phi[3]', 'phi[4]', 'phi[5]',
+                                                           'phi[B]', 'phi[NB]', 'psi[3]', 'psi[4]', 'psi[5]', 'psi[B]', 'psi[NB]'))) %>%
+  transform(type = ifelse(is.na(mu_low), 'Pupping', 'Survival'))
+
+#females only
+phi_plot <- ggplot(phi_psi_plot_vals %>% filter(type == 'Survival'),
+       aes(region, med, color = factor(region), group = factor(region))) +
+  geom_errorbar(aes(x = region, ymin=lower, ymax=upper), position = position_dodge(0.5),
+                width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) +
+  geom_hline(aes(yintercept = mu), linetype = 'dashed', color = 'black') +
+  geom_text(aes(label = label,
+                               group = variable, y = 0.1, x = 5), parse = T, inherit.aes = F,
+            colour = "black", size = 3) +
+  xlab('') + ylab(expression(paste('Survival probability ',  '(', phi, ')'))) +
+  ggtitle('') +
+  facet_grid(~variable, labeller = label_parsed) +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA),
+             plot.title = element_blank()) +
+  # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+  scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '')
+
+
+psi_plot <- ggplot(phi_psi_plot_vals %>% filter(type == 'Pupping'), 
+       aes(region, med, color = factor(region), group = factor(region))) +
+  geom_errorbar(aes(x = region, ymin=lower, ymax=upper), position = position_dodge(0.5), 
+                width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) + 
+  geom_hline(aes(yintercept = mu), linetype = 'dashed', color = 'black') +
+  geom_text(aes(label = label,
+                               group = variable, y = -0.10, x = 5), parse = T, inherit.aes = F,
+            colour = "black", size = 3) +
+  xlab('') + ylab(expression(paste('Pupping probability ',  '(', psi, ')'))) +
+  ggtitle('') +
+  facet_grid(~variable, labeller = label_parsed) +
+  plot_theme(legend.position = 'none', 
+             panel.border = element_rect(fill = NA),
+             plot.title = element_blank()) +
+  # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+  scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '') 
+
+space <- ggdraw() +
+  draw_label(
+    "",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0) +
+  theme(
+    plot.margin = margin(0, 0, 0, 200) #t,r,b,l
+    )
+
+phi_psi_plot <- plot_grid(phi_plot, plot_grid(psi_plot, space, nrow = 1, rel_widths = c(1.28, 0.72)), nrow = 2)
+
+#presentation figures
+# ggplot(phi_psi_plot_vals %>% 
+#             filter(variable %in% c('phi[P]', 'phi[1]', 'phi[2]')),
+#        aes(region, med, color = factor(region), group = factor(region))) +
+#   geom_errorbar(aes(x = region, ymin=lower, ymax=upper), position = position_dodge(0.5),
+#                 width = 0.2, show.legend = F) +
+#   geom_point(size = 0.8, position = position_dodge(0.5)) +
+#   geom_hline(aes(yintercept = mu), linetype = 'dashed', color = 'black') +
+#   geom_text(aes(label = label,
+#                                group = variable, y = 0.1, x = 5), parse = T, inherit.aes = F,
+#             colour = "black", size = 3.5) +
+#   xlab('') + ylab(expression(paste('Survival probability'))) +
+#   ggtitle('') +
+#   facet_grid(~variable, labeller = label_parsed) +
+#   pres_theme(legend.position = 'none',
+#              plot.title = element_blank()) +
+#   # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+#   scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '')
+# 
+# ggplot(phi_psi_plot_vals %>% 
+#             filter(variable %in% c('psi[3]', 'psi[4]', 'psi[B]')),
+#        aes(region, med, color = factor(region), group = factor(region))) +
+#   geom_errorbar(aes(x = region, ymin=lower, ymax=upper), position = position_dodge(0.5),
+#                 width = 0.2, show.legend = F) +
+#   geom_point(size = 0.8, position = position_dodge(0.5)) +
+#   geom_hline(aes(yintercept = mu), linetype = 'dashed', color = 'black') +
+#   geom_text(aes(label = label,
+#                                group = variable, y = 0.05, x = 5), parse = T, inherit.aes = F,
+#             colour = "black", size = 3.5) +
+#   xlab('') + ylab(expression(paste('Pupping probability'))) +
+#   ggtitle('') +
+#   facet_grid(~variable, labeller = label_parsed) +
+#   pres_theme(legend.position = 'none',
+#              plot.title = element_blank()) +
+#   # guides(color = guide_legend("", nrow = 1, byrow = T)) +
+#   scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '')
+
+```
+
+```{r Ntot}
+
+#deleted these files sept 2022 repo cleanup
+# out_1 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-1.RDS", sep = "")))
+# out_2 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-2.RDS", sep = "")))
+# out_3 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-3.RDS", sep = "")))
+# 
+# post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+# post <- as.matrix(post)
+# 
+# post_sum <- data.frame(
+#   med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+#   lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+#   upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+# post_sum$variable <- row.names(post_sum)
+
+Ntot_post_sum <- post_sum %>% filter(grepl('Ntot', variable)) %>%
+  filter(!grepl('_f', variable) & !grepl('_m', variable)) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', 
+                                                variable)))) %>%
+  transform(region = gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', variable)) %>%
+# transform(region = factor(region, levels = c(3,1,4,2,5,6),
+#                             labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+#                                        'E.Aleutians', 'C.Aleutians', 'W.Aleutians')))
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
+Ntot_plot_reg <- ggplot(Ntot_post_sum, aes(year, med, color = factor(region), group = factor(region))) +
+  geom_errorbar(aes(x = year, ymin=lower, ymax=upper), position = position_dodge(0.5), width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) + 
+  geom_line(size = 0.7, position = position_dodge(0.5)) +
+  xlab('') + ylab(expression(paste(''))) +
+  # ggtitle('') +
+  facet_wrap(~region, scales = 'free_y') +
+  plot_theme(legend.position = 'none', panel.border = element_rect(fill = NA),
+             plot.title = element_text(hjust = 0.5)) +
+  guides(color = guide_legend("", nrow = 1)) +
+  scale_color_manual(values = rainbow2[c(2,3,5,6,7,8)], name = '') +
+  scale_x_continuous(breaks = c(seq(1, 22, by = 3)), labels = c(seq(2000, 2021, by = 3)))
+
+#rangewide abundance
+Ntot_range <- Ntot_post_sum %>%
+  group_by(year) %>%
+  dplyr::summarize(med = sum(med), lower = sum(lower), upper = sum(upper))
+
+Ntot_range_plot <- ggplot(Ntot_range, aes(year, med)) +
+  geom_errorbar(aes(x = year, ymin=lower, ymax=upper), position = position_dodge(0.5), width = 0.5, show.legend = F) +
+  geom_point(size = 0.8, position = position_dodge(0.5)) + 
+  geom_line(size = 0.7, position = position_dodge(0.5)) +
+  xlab('') + ylab(expression(paste('Abundance'))) +
+  ggtitle('') +
+  plot_theme(legend.position = 'top', panel.border = element_rect(fill = NA),
+             plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = c(seq(1, 22, by = 3)), labels = c(seq(2000, 2021, by = 3)))
+
+Ntot_plot <- plot_grid(Ntot_range_plot, Ntot_plot_reg, rel_widths = c(0.8, 1.1))
+
+```
+
+```{r age str}
+
+### stable age code
+## Females and males
+ests <- data.frame(phiP = 0.6, phi1 = 0.7, phi2 = 0.8, phi3 = 0.92, phi4 = 0.95, phi5 = 0.95,
+                   phiB = 0.95, phiNB = 0.8, psi3 = 0.15, psi4 = 0.75, psi5 = 0.15,
+                   psiB = 0.9, psiNB = 0.3,
+                   phiPM = 0.6, phi1M = 0.7, phi2M = 0.75, phi3M = 0.92, phi4M = 0.9,
+                   phi5M = 0.9, phiBM = 0.85)
+
+les_mat <- matrix(0, nrow = 15, ncol = 15)
+
+les_mat[1,4] <- (ests$phi3*(ests$psi3))/2
+les_mat[1,5] <- (ests$phi4*(ests$psi4))/2
+les_mat[1,6] <- (ests$phi5*(ests$psi5))/2
+les_mat[1,7] <- (ests$phiB*(ests$psiB))/2
+les_mat[1,8] <- (ests$phiNB*(ests$psiNB))/2
+les_mat[2,1] <- ests$phiP
+les_mat[3,2] <- ests$phi1
+les_mat[4,3] <- ests$phi2
+les_mat[5,4] <- ests$phi3*(1-ests$psi3)
+les_mat[6,5] <- ests$phi4*(1-ests$psi4)
+les_mat[7,4] <- ests$phi3*(ests$psi3)
+les_mat[7,5] <- ests$phi4*(ests$psi4)
+les_mat[7,6] <- ests$phi5*(ests$psi5)
+les_mat[7,7] <- ests$phiB*(ests$psiB)
+les_mat[7,8] <- ests$phiNB*(ests$psiNB)
+les_mat[8,6] <- ests$phi5*(1-ests$psi5)
+les_mat[8,7] <- ests$phiB*(1-ests$psiB)
+les_mat[8,8] <- ests$phiNB*(1-ests$psiNB)
+les_mat[9,4] <- (ests$phi3*(ests$psi3))/2
+les_mat[9,5] <- (ests$phi4*(ests$psi4))/2
+les_mat[9,6] <- (ests$phi5*(ests$psi5))/2
+les_mat[9,7] <- (ests$phiB*(ests$psiB))/2
+les_mat[9,8] <- (ests$phiNB*(ests$psiNB))/2
+les_mat[10,9] <- ests$phiPM
+les_mat[11,10] <- ests$phi1M
+les_mat[12,11] <- ests$phi2M
+les_mat[13,12] <- ests$phi3M
+les_mat[14,13] <- ests$phi4M
+les_mat[15,14] <- ests$phi5M
+les_mat[15,15] <- ests$phiBM
+
+# ea <- demogR::eigen.analysis(les_mat)
+ea <- popbio::eigen.analysis(les_mat)
+stable <- ea$stable.stage
+
+stableAge <- stable[1:8]/sum(stable[1:8])
+stableAgeM <- stable[9:15]/sum(stable[9:15])
+###
+
+nSamples <- dim(post)[1]
+nSamp <- 1000
+
+Ntot_post <- post[(nSamples-nSamp+1):nSamples,grepl('Ntot', colnames(post)) & !grepl('_f', colnames(post)) 
+                  & !grepl('_m', colnames(post))] %>% 
+  reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', Var2))) %>%
+  transform(Ntot = value) %>% dplyr::select(-c(value, Var2))
+
+N_f_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_f', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2)))) 
+
+N_m_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_m', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
+
+props_f <- N_f_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+  transform(prop = value/Ntot) %>%
+  group_by(age, region) %>%
+  dplyr::summarize(mean = mean(prop), lower = quantile(prop, probs = 0.025, names = F),
+                   upper = quantile(prop, probs = 0.975, names = F), .groups = 'keep') %>%
+  transform(sex = 'F')
+
+props_m <- N_m_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+  transform(prop = value/Ntot) %>%
+  group_by(age, region) %>%
+  dplyr::summarize(mean = mean(prop), lower = quantile(prop, probs = 0.025, names = F),
+                   upper = quantile(prop, probs = 0.975, names = F), .groups = 'keep') %>%
+  transform(sex = 'M')
+
+age_reg <- bind_rows(props_f, props_m) %>%
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA'))) %>%
+  transform(age = ifelse(age == 1, 'Pup', ifelse(age == 7 & sex == 'F', 'Breeding female',
+                                                 ifelse(age == 8 & sex == 'F', 'Non-breeding female',
+                                                        ifelse(age == 7 & sex == 'M', 'Adult male', 
+                                                               paste0(age-1, sex)))))) %>%
+  transform(mean = ifelse(age == 'Pup', mean*2, mean), 
+            upper = ifelse(age == 'Pup', upper*2, upper),
+            lower = ifelse(age == 'Pup', lower*2, lower)) %>%
+  transform(age = factor(age, levels = c('1F', '1M', '2F', '2M', '3F', '3M', '4F', '4M', '5F', '5M', 
+                                         'Breeding female', 'Pup', 'Non-breeding female', 'Adult male'))) %>%
+  transform(exc = ifelse(age == 'Pup' & sex == 'M', 'Y', 'N')) %>% filter(exc != 'Y') #just for the plot
+
+stable_dat <- data.frame(age = c('Pup', '1F', '2F', '3F', '4F', '5F', 'Breeding female', 
+                             'Non-breeding female', '1M', '2M', '3M', '4M', '5M', 'Adult male'),
+                     stable_prop = c(stable[1]+stable[9], stable[2:8], stable[10:15])) %>%
+  transform(age = factor(age, levels = c('Pup', '1F', '1M', '2F', '2M', '3F', '3M', '4F', '4M', '5F', '5M', 
+                                         'Breeding female', 'Non-breeding female', 'Adult male')))
+
+#both sexes
+age_plot <- ggplot(age_reg, aes(region, mean, group = region, color = factor(region))) +
+  geom_hline(data = stable_dat, aes(yintercept = stable_prop), linetype = 'dashed') +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3) +
+  facet_wrap(~age, ncol = 4) +
+  # facet_grid(age~) +
+  xlab('Region') + ylab('Population proportion') +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)])
+
+#range-wide stats for text
+age_all <- age_reg %>%
+  group_by(age) %>%
+  dplyr::summarize(mean = mean(mean), lower = mean(lower), upper = mean(upper))
+
+###adapt above figure to combine juvenile proportions; paper appendix
+age_reg_comb <- age_reg %>%
+  filter(age %nin% c('1M', '2M', '3M', '4M', '5M')) %>%
+  merge(stable_dat, all.x = T, by = 'age') %>%
+  transform(mean = ifelse(age %in% c('1F', '2F', '3F', '4F', '5F'), mean*2, mean),
+            lower = ifelse(age %in% c('1F', '2F', '3F', '4F', '5F'), lower*2, lower),
+            upper = ifelse(age %in% c('1F', '2F', '3F', '4F', '5F'), upper*2, upper),
+            stable_prop = ifelse(age %in% c('1F', '2F', '3F', '4F', '5F'), stable_prop*2, stable_prop)) %>%
+  transform(age = factor(age, levels = c('Pup', '1F', '2F', '3F', '4F', '5F', 'Breeding female', 'Non-breeding female', 'Adult male'),
+                         labels = c('Pup', '1', '2', '3', '4', '5', 'Breeding female', 'Non-breeding female', 'Adult male'))) %>%
+  dplyr::select(-c(sex, exc))
+
+juvs <- age_reg_comb %>% filter(age %in% c('3', '4', '5')) %>%
+  group_by(region) %>%
+  dplyr::summarize(mean = sum(mean), lower = sum(lower), upper = sum(upper), stable_prop = sum(stable_prop)) %>%
+  transform(age = 'J') %>% dplyr::select(c(age, region, mean, lower, upper, stable_prop))
+
+age_reg_comb <- age_reg_comb %>% filter(age %nin% c('3', '4', '5')) %>% bind_rows(juvs) %>%
+  transform(age = factor(age, levels = c('Pup', '1', '2', 'J','Breeding female', 'Non-breeding female', 'Adult male'),
+                         labels = c('Pup', '1', '2', 'J [3:5]', 'Breeding female', 'Non-breeding female', 'Adult male')))
+
+ggplot(age_reg_comb, aes(region, mean, group = region, color = factor(region))) +
+  geom_hline(aes(yintercept = stable_prop), linetype = 'dashed') +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3) +
+  facet_wrap(~age, ncol = 4) +
+  # facet_grid(age~) +
+  xlab('Region') + ylab('Population proportion') +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)])
+
+##pups versus non_pups or total to compare to multiplier
+mult <- N_m_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+  transform(sex = 'Male') %>%
+  bind_rows(
+    N_f_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+      transform(sex = 'Female')) %>%
+    transform(age = ifelse(age == 1, 'Pup', ifelse(age == 7 & sex == 'F', 'Breeding female',
+                                                 ifelse(age == 8 & sex == 'F', 'Non-breeding female',
+                                                        ifelse(age == 7 & sex == 'M', 'Adult male', 
+                                                               paste0(age-1, sex)))))) %>%
+    transform(exc = ifelse(age == 'Pup' & sex == 'M', 'Y', 'N')) %>% filter(exc != 'Y') %>%
+  transform(value = ifelse(age == 'Pup', value*2, value)) %>%
+  filter(age == 'Pup') %>%
+  transform(mult = Ntot/value) %>%
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA'))) %>%
+  group_by(year, region) %>%
+  dplyr::summarize(mean = mean(mult), lower = quantile(mult, probs = 0.025),
+                   upper = quantile(mult, probs = 0.975), .groups = 'keep')
+
+mult_reg <- N_m_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+  transform(sex = 'Male') %>%
+  bind_rows(
+    N_f_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+      transform(sex = 'Female')) %>%
+    transform(age = ifelse(age == 1, 'Pup', ifelse(age == 7 & sex == 'F', 'Breeding female',
+                                                 ifelse(age == 8 & sex == 'F', 'Non-breeding female',
+                                                        ifelse(age == 7 & sex == 'M', 'Adult male', 
+                                                               paste0(age-1, sex)))))) %>%
+    transform(exc = ifelse(age == 'Pup' & sex == 'M', 'Y', 'N')) %>% filter(exc != 'Y') %>%
+  transform(value = ifelse(age == 'Pup', value*2, value)) %>%
+  filter(age == 'Pup') %>%
+  transform(mult = Ntot/value) %>%
+  transform(region = factor(region, levels = c(6,5,2,4,1,3),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA'))) %>%
+  group_by(region) %>%
+  dplyr::summarize(mean = mean(mult), lower = quantile(mult, probs = 0.025),
+                   upper = quantile(mult, probs = 0.975), .groups = 'keep')
+
+mult_reg_plot <- ggplot(mult, aes(x = year, y = mean, col = region)) +
+  geom_point(show.legend = F) + 
+  geom_linerange(aes(ymin = lower, ymax = upper), show.legend = F) +
+  geom_line() +
+  geom_hline(data = mult_reg, aes(yintercept = mean, col = region), linetype = 'dashed') +
+  # geom_linerange(data = mult_reg, aes(x = factor(region), ymin = lower, ymax = upper)) +
+  geom_hline(aes(yintercept = 4.5), col = 'black', linetype = 'dashed') +
+  ylab('') + xlab('') +
+  facet_wrap(~region) +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_x_continuous(breaks = c(seq(1, 22, by = 3)), labels = c(seq(2000, 2021, by = 3)))
+
+#overall multiplier by year
+mult_yr <- N_m_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+  transform(sex = 'Male') %>%
+  bind_rows(
+    N_f_post %>% merge(Ntot_post, by = c('Var1', 'year', 'region')) %>%
+      transform(sex = 'Female')) %>%
+    transform(age = ifelse(age == 1, 'Pup', ifelse(age == 7 & sex == 'F', 'Breeding female',
+                                                 ifelse(age == 8 & sex == 'F', 'Non-breeding female',
+                                                        ifelse(age == 7 & sex == 'M', 'Adult male', 
+                                                               paste0(age-1, sex)))))) %>%
+    transform(exc = ifelse(age == 'Pup' & sex == 'M', 'Y', 'N')) %>% filter(exc != 'Y') %>%
+  transform(value = ifelse(age == 'Pup', value*2, value)) %>%
+  filter(age == 'Pup') %>%
+  transform(mult = Ntot/value) %>%
+  group_by(year) %>%
+  dplyr::summarize(mean = mean(mult), lower = quantile(mult, probs = 0.025),
+                   upper = quantile(mult, probs = 0.975), .groups = 'keep')
+
+mult_range_plot <- ggplot(mult_yr, aes(x = year, y = mean)) +
+  geom_point(show.legend = F) + 
+  geom_linerange(aes(ymin = lower, ymax = upper), show.legend = F) +
+  geom_line() +
+  geom_hline(aes(yintercept = 4.5), col = 'black', linetype = 'dashed') +
+  ylab('Total abundance:Pups Ratio') + xlab('') + ggtitle('') +
+  plot_theme(legend.position = 'top',
+             panel.border = element_rect(fill = NA)) +
+  scale_x_continuous(breaks = c(seq(1, 22, by = 3)), labels = c(seq(2000, 2021, by = 3)))
+
+mult_plot <- plot_grid(mult_range_plot, mult_reg_plot, rel_widths = c(0.8, 1.2))
+
+```
+
+```{r sensitivity}
+
+corr.sum <- read.csv(file = here::here('results', 'processed', 'corr.sum.csv'), header = T) %>%
+  transform(region = factor(region, levels = c(2,4,1,3),
+                            labels = c('E.AI', 'W.GoA', 'C.GoA', 'E.GoA'))) %>%
+  transform(variable = factor(variable, levels = c('Pup', '1', '2', '3', '4', '5', 'B', 
+                                                   'psi4', 'psiB'),
+                              labels = c('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i')))
+
+#plot of just correlation coefficients
+#region colors
+library(latex2exp) #
+library(ggh4x) #nested faceting
+corr_sum_plot <- ggplot(corr.sum %>% filter(!grepl('M', variable)), 
+                        aes(x = variable, y = median, group = factor(region), color = factor(region))) +
+  geom_point(position = position_dodge(0.5)) +
+  geom_errorbar(aes(x = variable, ymin = lower, ymax = upper), position = position_dodge(0.5)) +
+  geom_hline(aes(yintercept = 0), color = 'red', linetype = 'dotted') +
+  xlab('Demographic rate') + ylab('Correlation coefficient (median & 95% CI)') +
+  plot_theme_x180(panel.border = element_rect(fill = NA), legend.position = 'top') + 
+  scale_color_manual(values = rainbow2[c(5,6,7,8)], name = '') +
+  scale_x_discrete(labels = c('a' = parse(text = TeX('$phi_P$')), 
+                              'b' = parse(text = TeX('$phi_1$')),
+                              'c' = parse(text = TeX('$phi_2$')), 
+                              'd' = parse(text = TeX('$phi_3$')),
+                              'e' = parse(text = TeX('$phi_4$')),
+                              'f' = parse(text = TeX('$phi_5$')),
+                              'g' = parse(text = TeX('$phi_B$')),
+                              'h' = parse(text = TeX('$psi_4$')),
+                              'i' = parse(text = TeX('$psi_B$'))))
+
+#for cross-hair plot
+#derive quantiles of demographic rates
+lambda <- array(NA, dim = c(length((nSamples-nSamp+1):nSamples), 6, n_occasions-1+3)) #21 years of counts
+for (r in 1:6) {
+  for (t in (nyears.burnin+2):(n_occasions+nyears.burnin+3)) {
+    # for (i in 1:nSamples) {
+  lambda[,r,(t-nyears.burnin-1)] <- Ntot_post[Ntot_post$region == r &
+                               Ntot_post$year == (t), 'Ntot']/
+        Ntot_post[Ntot_post$region == r &
+                    Ntot_post$year == (t-1), 'Ntot']
+  }
+}
+lambda_med <- apply(lambda, c(2,3), mean)
+lambda_lower <- apply(lambda, c(2,3), function(x) quantile(x, prob = 0.025, na.rm = T))
+lambda_upper <- apply(lambda, c(2,3), function(x) quantile(x, prob = 0.975, na.rm = T))
+
+lambda_long <- lambda_med %>% reshape2::melt(value.name = 'lambda_med') %>% 
+  dplyr::rename(region = Var1, year = Var2) %>%
+  merge(lambda_lower %>% reshape2::melt(value.name = 'lambda_lower') %>% 
+  dplyr::rename(region = Var1, year = Var2), by = c('year', 'region')) %>%
+  merge(lambda_upper %>% reshape2::melt(value.name = 'lambda_upper') %>% 
+  dplyr::rename(region = Var1, year = Var2), by = c('year', 'region')) %>%
+ transform(region = factor(region, levels = c(3,1,4,2,5,6),
+                            labels = c('E.GoA', 'C.GoA', 'W.GoA', 
+                                       'E.AI', 'C.AI', 'W.AI')))
+
+corr_plot_vals <- bind_rows(phi_post_sum %>% filter(variable != 'phiNB' & !grepl('M', variable)), 
+                            psi_post_sum %>% filter(variable %nin% c('psiNB', 'psi3', 'psi5'))) %>%
+  merge(lambda_long %>% filter(year < n_occasions), by = c('region', 'year')) %>%
+  transform(variable = factor(variable, levels = c('phiP', 'phi1', 'phi2', 'phi3', 'phi4', 'phi5', 'phiB', 
+                                                   'psi4', 'psiB'),
+                              labels = c('phi[P]', 'phi[1]', 'phi[2]', 'phi[3]', 'phi[4]', 'phi[5]', 'phi[B]', 
+                                                   'psi[4]', 'psi[B]')))
+
+corr_labels <- corr.sum %>% filter(!grepl('M', variable)) %>%
+  group_by(variable) %>%
+  dplyr::summarize(lower = round(mean(lower),2), median = round(mean(median),2), upper = round(mean(upper),2)) %>%
+  transform(variable = factor(variable, levels = c('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'),
+                              labels = c('phi[P]', 'phi[1]', 'phi[2]', 'phi[3]', 'phi[4]', 'phi[5]', 'phi[B]', 
+                                                   'psi[4]', 'psi[B]')))
+
+corr_plot <- ggplot(corr_plot_vals, aes(med, lambda_med)) +
+  geom_linerange(aes(x = med, ymin = lambda_lower, ymax = lambda_upper), col = 'grey') +
+  geom_linerangeh(aes(y = lambda_med, xmin = lower, xmax = upper), col = 'grey') +
+  geom_point(aes(fill = variable), col = 'black', shape = 21) +
+  geom_smooth(method = 'lm', se = F, col = 'black', size = 0.6) +
+  geom_text(data = corr_labels, aes(label = paste0('r = ', median, ' ', '(', lower, ',', upper, ')'),
+                               y = rep(1.195,9),
+                               # x = rep(0.25,9),
+                               x = c(0.2, 0.3, 0.2, 0.85, 0.885, 0.9, 0.84, 0.2, 0.5),
+                               group = variable),
+              parse = F, inherit.aes = F, colour = "black", size = 3) +
+  xlab('Parameter value') + ylab('Population growth rate') +
+    facet_wrap(~variable, scales = 'free_x', labeller = label_parsed) +
+  plot_theme(panel.border = element_rect(fill = NA), legend.position = 'none') + 
+  # scale_fill_manual(values = rainbow2[-c(1,4)])
+  scale_color_manual(values=lacroix_palette("PeachPear",type = "continuous", n = 9)) +
+  scale_fill_manual(values=lacroix_palette("PeachPear",type = "continuous", n = 9)) 
+
+# corr_plot <- plot_grid(corr_plot, corr_sum_plot)
+
+#for text references -- and plot
+#range-wide
+lambda_med_range <- apply(lambda, c(3), mean)
+lambda_lower_range <- apply(lambda, c(3), function(x) quantile(x, prob = 0.025, na.rm = T))
+lambda_upper_range <- apply(lambda, c(3), function(x) quantile(x, prob = 0.975, na.rm = T))
+
+#for each region, text regions
+lambda_med_reg <- apply(lambda, c(2), mean)
+lambda_lower_reg <- apply(lambda, c(2), function(x) quantile(x, prob = 0.025, na.rm = T))
+lambda_upper_reg <- apply(lambda, c(2), function(x) quantile(x, prob = 0.975, na.rm = T))
+
+lambda_reg_wide <- data.frame(region = c("C.GULF", "E.ALEU", "E.GULF",
+                                                        "W.GULF", "C.ALEU", "W.ALEU"),
+                              med = lambda_med_reg,
+                              lower = lambda_lower_reg,
+                              upper = lambda_upper_reg) %>%
+  transform(region = factor(region, levels = c('W.ALEU', 'C.ALEU', 'E.ALEU',
+                                            'W.GULF', 'C.GULF', 'E.GULF'),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+
+agTrend_lambda <- read.csv(here::here('data', 'agTrend_Nmin_lambda.csv'), stringsAsFactors = F, header = T) %>%
+  transform(region = factor(reg, levels = c('W ALEU', 'C ALEU', 'E ALEU',
+                                            'W GULF', 'C GULF', 'E GULF'),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA')))
+  
+
+lambda_plot <- ggplot(lambda_reg_wide, aes(region, med)) +
+    geom_point(data = agTrend_lambda, aes(region, est), col = 'red2', shape = 8, size = 3, 
+             position = position_dodge(width = 0.5), inherit.aes = F) +
+  geom_point(position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.4, position = position_dodge(width = 0.5)) +
+  geom_hline(aes(yintercept = mean(lambda_med_range)), linetype = 'dashed', col = 'grey') +
+  geom_hline(aes(yintercept = 1.0), linetype = 'dashed', col = 'black') +
+  ylab('Population growth rate') + xlab('') +
+  plot_theme(panel.border = element_rect(fill = NA))
+
+#presentation
+ggplot(lambda_reg_wide, aes(region, med)) +
+  geom_point(position = position_dodge(width = 0.5), size = 1.5) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, position = position_dodge(width = 0.5)) +
+  geom_hline(aes(yintercept = mean(lambda_med_range)), linetype = 'dashed', col = 'grey') +
+  geom_hline(aes(yintercept = 1.0), linetype = 'dashed', col = 'black') +
+  ylab('Population growth rate') + xlab('') +
+  pres_theme()
+
+```
+
+```{r base projection}
+
+nyears.proj <- 100
+
+Ntot.sim <- readRDS(file = here::here('results', 'projections', 'Ntot.rds'))
+lambda.mean.sim <- readRDS(file = here::here('results', 'projections', 'lambda.rds'))
+p.ext.sim <- readRDS(file = here::here('results', 'projections', 'p.ext.rds'))
+p.ad.ext.sim <- readRDS(file = here::here('results', 'projections', 'p.ad.ext.rds'))
+p.neg.sim <- readRDS(file = here::here('results', 'projections', 'p.neg.rds'))
+
+#want mean and CI for each time step and region
+Ntot_mean <- apply(Ntot.sim, c(4,2), median)
+Ntot_q2.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.025))
+Ntot_q97.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.975))
+
+#Ntot figures
+N_mean_long_sim <- Ntot_mean %>%
+  reshape2::melt(value.name = 'mean') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_low_long_sim <- Ntot_q2.5 %>%
+  reshape2::melt(value.name = 'lower') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_high_long_sim <- Ntot_q97.5 %>%
+  reshape2::melt(value.name = 'upper') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_vals_sim <- N_mean_long_sim %>%
+  merge(N_low_long_sim, by = c('reg', 'year')) %>%
+  merge(N_high_long_sim, by = c('reg', 'year')) %>%
+  arrange(reg, year) %>%
+transform(reg = factor(reg, levels = c(3,1,4,2,5,6),
+                            labels = c('E.Gulf', 'C.Gulf', 'W.Gulf', 
+                                       'E.Aleutians', 'C.Aleutians', 'W.Aleutians')))
+
+#Ntot; mean trajectories for each region
+proj_plot <- ggplot(N_vals_sim,
+       aes(year, mean, group = factor(reg), col = factor(reg))) +
+  geom_line() +
+  geom_ribbon(aes(year, ymin = lower, ymax = upper, col = factor(reg), fill = factor(reg), alpha = 0.5), 
+              show.legend = F) +
+  xlab('') + ylab('Population size') +
+  facet_wrap(~reg, scales = 'free_y') +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA)) +
+    scale_x_continuous(limits = c(1,n_occasions+nyears.burnin+nyears.proj),
+                     breaks = seq(2, n_occasions+nyears.burnin+nyears.proj, by = 10),
+                     labels = seq(2000, (2000+n_occasions+nyears.burnin+nyears.proj), by = 10)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)])
+
+#presentation
+ggplot(N_vals_sim,
+       aes(year, mean, group = factor(reg), col = factor(reg))) +
+  geom_line() +
+  geom_ribbon(aes(year, ymin = lower, ymax = upper, col = factor(reg), fill = factor(reg), alpha = 0.5), 
+              show.legend = F) +
+  xlab('') + ylab('Abundance') +
+  facet_wrap(~reg, scales = 'free_y') +
+  pres_theme(legend.position = 'none') +
+    scale_x_continuous(limits = c(1,n_occasions+nyears.burnin+nyears.proj),
+                     breaks = seq(2, n_occasions+nyears.burnin+nyears.proj, by = 20),
+                     labels = seq(2000, (2000+n_occasions+nyears.burnin+nyears.proj), by = 20)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)])
+
+```
+
+```{r env projection}
+
+nyears.proj <- 100
+
+tag <- 'extreme_long'
+# Ntot.sim.cov <- readRDS(file = here::here('results', 'projections', paste0('Ntot_cov', tag, '.rds'))) #%>%
+#   # transform(npgo = factor(npgo, levels = c('low', 'status quo', 'high'), 
+#   #                         labels = c('Low', 'Status quo', 'High')))
+lambda.mean.sim <- readRDS(file = here::here('results', 'projections', paste0('lambda_cov9', tag, '.rds'))) #%>%
+  # transform(npgo = factor(npgo, levels = c('low', 'status quo', 'high'), 
+  #                         labels = c('Low', 'Status quo', 'High')))
+# p.ext.sim <- readRDS(file = here::here('results', 'projections', paste0('p.ext_cov9', tag, '.rds'))) #%>%
+#   # transform(npgo = factor(npgo, levels = c('low', 'status quo', 'high'), 
+#   #                         labels = c('Low', 'Status quo', 'High')))
+# p.ad.ext.sim <- readRDS(file = here::here('results', 'projections', paste0('p.ad.ext_cov9', tag, '.rds'))) # %>%
+#   # transform(npgo = factor(npgo, levels = c('low', 'status quo', 'high'), 
+#   #                         labels = c('Low', 'Status quo', 'High')))
+# p.neg.sim <- readRDS(file = here::here('results', 'projections', paste0('p.neg_cov9', tag, '.rds'))) #%>%
+#   # transform(npgo = factor(npgo, levels = c('low', 'status quo', 'high'), 
+#   #                         labels = c('Low', 'Status quo', 'High')))
+
+lambda.cov <- lambda.mean.sim %>% dplyr::rename(sim = Var1, reg = Var2) %>%
+  transform(reg = factor(reg, levels = c('W.ALEU', 'C.ALEU', 'E.ALEU', 'W.GULF', 
+                                            'C.GULF', 'E.GULF'),
+                            labels = c('W.AI', 'C.AI', 'E.AI', 'W.GoA', 'C.GoA', 'E.GoA'))) %>%
+  transform(sc = factor(sc, levels = c(2,4,6, 1,8,9, 3,5,7))) %>%
+  transform(mu = ifelse(sc %in% c(4,5,8), 'Low', ifelse(sc %in% c(1,2,3), 'Historical', 'High'))) %>%
+  transform(sd = ifelse(sc %in% c(2,4,6), 'Low', ifelse(sc %in% c(1,8,9), 'Historical', 'High'))) %>%
+  transform(mu = factor(mu, levels = c('Low', 'Historical', 'High'))) %>%
+  transform(sd = factor(sd, levels = c('Low', 'Historical', 'High')))
+
+baseline <- lambda.cov %>% filter(sc == 1) %>%
+  group_by(reg) %>%
+  dplyr::summarize(value = mean(value))
+
+#1 as baseline
+# lambda_env_plot <- ggplot(lambda.cov %>% filter(!is.na(sc) & sc != 1), 
+#                           aes(y=value, x = factor(sc), group = factor(sc))) +
+#   geom_boxplot(width = 0.5, aes(x = sc, color = factor(mu), fill = factor(sd)), 
+#                position = position_dodge(width = 0.5)) +
+#   geom_hline(data = baseline, aes(yintercept = value), linetype = 'dotted') +
+#   xlab('Scenario') + ylab('Population growth rate') +
+#   plot_theme(legend.position = 'top',
+#              panel.border = element_rect(fill = NA)) +
+#   facet_wrap(~reg) +
+#     # scale_color_manual(values=lacroix_palette("PeachPear",type = "continuous", n = 8)) +
+#   # scale_color_brewer(palette = 'Spectral')
+#   scale_color_manual(values = rainbow2, name = 'Mean') +
+#   scale_fill_manual(values = c(NA, 'lightgrey', 'darkgrey'), name = 'Variability') 
+
+#nested
+lambda_env_plot <- ggplot(lambda.cov, 
+                          aes(y=value, x = factor(mu), group = factor(sc))) +
+  geom_boxplot(width = 0.5, aes(x = mu, color = factor(sd)), 
+               position = position_dodge(width = 0.5)) +
+  geom_hline(data = baseline, aes(yintercept = value), linetype = 'dotted') +
+  xlab('Average of environmental conditions') + ylab('Population growth rate') +
+  plot_theme(legend.position = 'top',
+             panel.border = element_rect(fill = NA)) +
+  facet_wrap(~reg) +
+  scale_color_manual(values = c('deepskyblue3', 'grey50', 'salmon2'), name = 'Variability of environmental conditions') 
+
+#presentation
+ggplot(lambda.cov, aes(y=value, x = factor(mu), group = factor(sc))) +
+  geom_boxplot(width = 0.5, aes(x = mu, color = factor(sd)), 
+               position = position_dodge(width = 0.5)) +
+  geom_hline(data = baseline, aes(yintercept = value), linetype = 'dotted') +
+  xlab('Average conditions') + ylab('Population growth rate') +
+  pres_theme_180(legend.position = 'top',
+             plot.margin = unit(c(0,1,0.5,0.5), 'cm')) +
+  facet_wrap(~reg) +
+  scale_color_manual(values = c('deepskyblue3', 'grey50', 'salmon2'), name = 'Variability of conditions') #+
+  # scale_fill_manual(values = c(NA, 'lightgrey', 'grey12'), name = 'Variability') 
+
+#percent changes in lambda for scenarios (average across regions)
+perc_change_reg <- lambda.cov %>%
+  group_by(sc, reg) %>%
+  dplyr::summarize(value = mean(value), .groups = 'keep') %>%
+  # reshape2::dcast(sc ~ reg, value.var = 'value') %>%
+  merge(lambda.cov %>% filter(sc == 1) %>% group_by(reg) %>% dplyr::summarize(baseline = round(mean(value),7)), by = 'reg') %>%
+  transform(perc = 100*(value-baseline)/baseline)
+
+perc_change <- perc_change_reg %>%
+  group_by(sc) %>%
+  dplyr::summarize(perc = round(mean(perc),3)) %>%
+  dplyr::rename(Scenario = sc)
+
+sc_tab <- data.frame(Scenario = c(1:9),
+            Mean = c('Historical', 'Historical', 'Historical', 'Low', 'Low', 'High', 'High', 'Low', 'High'),
+            sd = c('Historical', 'Smaller', 'Larger', 'Smaller', 'Larger', 'Smaller',
+                   'Larger', 'Historical', 'Historical')) %>%
+  merge(perc_change, by = 'Scenario')
+
+#looking at whether certain regions are more/less sensitive to env perturbation, assuming effect of env feature uniform across regions
+perc_change_reg_dif <- perc_change_reg %>%
+  group_by(reg) %>%
+  dplyr::summarize(max_perc = max(abs(perc)))
+
+
+```
+
+
+**Population viability analysis for the western distinct population segment of Steller sea lions in Alaska**
+
+Amanda J. Warlick,$^1$ Devin S. Johnson,$^2$ Tom S. Gelatt,$^3$ Sarah J. Converse$^4$  
+
+1. School of Aquatic and Fishery Sciences, University of Washington, Seattle, Washington  
+
+2. Pacific Islands Fisheries Science Center, National Marine Fisheries Service, 
+Honolulu, Hawaii
+
+3. Marine Mammal Laboratory, Alaska Fisheries Science Center, National Marine Fisheries Service, Seattle, Washington 
+
+4. U.S. Geological Survey, Washington Cooperative Fish and Wildlife Research Unit, School of Environmental and Forest Sciences & School of Aquatic and Fishery Sciences, University of Washington, Seattle, Washington
+
+### **Abstract**  
+
+Understanding the spatio-temporal variability in demography is fundamental to gaining insights into the different factors that underlie population dynamics and viability for wildlife populations. This is particularly true for species with divergent trends in abundance spanning large geographic ranges. The decline and divergent recovery of Steller sea lions (*Eumetopias jubatus*) has been studied extensively, though the reasons for the initial decline and the different recovery trends that have been observed across their range remain largely unknown. We developed a Bayesian integrated population model for the western distinct population segment of Steller sea lions in Alaska that combines rookery counts and capture-recapture data from 2000-2021 to estimate demography, abundance trends, and the effects of environmental variability on population growth and viability. Our results show declining age-specific survival rates in the latter part of the study period and highlight demographic differences between subregions, including reduced pup survival in the central Aleutians and reduced yearling survival in the central and western Aleutians. Range-wide abundance increased by `r round(mean(lambda_reg_wide$med)-1,4)*100`%yr$^{-1}$ (95% credible interval: `r round(mean(lambda_reg_wide$lower)-1,3)*100`-`r round(mean(lambda_reg_wide$upper)-1,3)*100`%) over the study period, with variable growth rates across the range. We estimated higher rates of annual growth (~`r round(mean(lambda_reg_wide[lambda_reg_wide$region %in% c('C.GoA', 'E.AI', 'E.GoA', 'W.GoA'), 'med'])-1,3)*100`%yr$^{-1}$) east of Samalga Pass and a decline (`r round(mean(lambda_reg_wide[lambda_reg_wide$region %in% c('C.AI', 'W.AI'), 'med'])-1,3)*100`%yr$^{-1}$) west of Samalga Pass. Our model framework represents an improvement upon existing approaches for estimating abundance, facilitates accounting for uncertainty in future viability due to environmental variability, and will be useful in evaluating the efficacy of ongoing monitoring and conservation actions for the species across its range. 
+
+Key words: Steller sea lion, population viability, integrated population model, Bayesian hierarchical model, endangered species, sensitivity analysis, environmental variability
+
+
+### **Introduction**  
+
+Understanding the spatio-temporal variability in demography is fundamental to gaining insights into the different factors that underlie population dynamics and viability for wildlife populations, particularly for species with divergent abundance trends observed across large geographic ranges. The decline and subsequent recovery of the western distinct population segment (wDPS) of Steller sea lions (*Eumetopias jubatus*) in Alaska is an example of such a situation. Despite extensive research aiming to identify drivers of regional population dynamics, uncertainty remains: we still do not understand why abundance in the central and western Aleutian Island rookeries west of Samalga Pass continues to decline while that in more eastern regions of the wDPS range has increased since the early 2000s (Fritz & Stinchcomb 2005, Fritz et al. 2016). These patterns have been at least partly attributed to reduced and variable age-specific survival and fecundity (York 1994, Holmes et al. 2007), with recent evidence suggesting depressed pup survival in areas of ongoing decline (Warlick et al. *in review*) and lower female breeder apparent survival in the eastern GoA in the late 2010's (Maniscalco 2018). We present an integrated population model and viability analysis for the wDPS of Steller sea lions in Alaska that identifies regional differences in vital rates that may be driving observed abundance trends and future viability. This approach improves upon the existing method of estimating abundance and will inform ongoing efforts aimed at the conservation, management, and recovery of this endangered population. 
+
+The accuracy of abundance estimates for wildlife populations directly affects managers' ability to develop effective monitoring and conservation strategies to recover declining or depleted populations. Combining multiple data sources within the formal framework of an integrated population model (IPMs; Besbeas et al. 2002, Brooks et al. 2004) can often improve precision, reduce bias, and facilitate the estimation of parameters not directly informed by data (Besbeas 2005, Schaub et al. 2007, Veran & Lebreton 2009, Tavecchia 2009, Abadi et al. 2010). Though the concept of data integration has been implemented in fisheries stock assessments since the 1980s (Methot 1990, Schnute & Richards 1990), IPMs are still an emerging and evolving tool in wildlife applications that has proven useful for examining population dynamics for species with complex life histories (brown bears, Bled et al. 2017; polar bears, Regehr et al. 2018), density dependence (Tenan et al. 2012), synchrony (Schaub et al. 2015, Lahoz-Monfort et al. 2017), movement (Chandler & Clark 2014), anthropogenic stressors (Rhodes 2011, Pirotta et al. 2018), and the effects of environmental variability on demography (Cleasby et al. 2017, Abadi et al. 2017). Using an IPM as the foundation of population viability analyses (PVA; Beissinger & Westphal 1998) can reduce uncertainty in abundance estimation and facilitates a full accounting of stochasticity when examining viability or the probability of achieving established recovery criteria. This IPM-based PVA approach has been used to examine population viability across varying climate change or management scenarios for wildlife populations of conservation concern (Saunders et al. 2018), including beluga whales (Mosnier et al. 2015, Warlick et al. *in review*), harbor seals (Boveng et al. 2018), and emperor penguins (Jenouvrier et al. 2019). 
+
+The IPM-based PVA framework developed here for Steller sea lions improves upon the information that is available for conservation and management decision-making by providing more robust estimates of region-specific vital rates, abundance trends, and the effects of environmental variability on viability. Existing abundance estimates have been derived by either summing aerial survey pup and non-pup counts for a minimum population abundance, or by multiplying regional pup counts by a scaling constant (4.5; Calkins & Pitcher (1982)), though these approaches do not account for imperfect detection nor do they use existing mark-resight data that can provide valuable information about vital rates underlying population dynamics. Based on these existing methods, non-pup and pup counts have increased by an estimated 2.7%yr$^{-1}$ and 2.9%yr$^{-1}$, respectively, in regions east of Samalga Pass (recognized as an ecologically important dividing line) from 2002-2019 (Sweeney et al. 2019), while counts of non-pups and pups have declined west of Samalga Pass by 1.2%yr$^{-1}$ and 2.08%yr$^{-1}$, respectively (Sweeney et al. 2018). While the overall population growth across the wDPS has been positive, the continued decline in the two adjacent central and western Aleutian Island subregions and the remaining uncertainty about threats to the population prevented the population from meeting all of the Endangered Species Act (ESA) downlisting criteria established within the recovery plan (NMFS 2008), as outlined in the most recent 5-year ESA Status Review (NMFS 2020). Previous PVAs (York et al. 1996, Gerber & VanBlaricom 2001, Winship & Trites 2006) revealed that the probability of extinction for the wDPS varied considerably depending on whether the population was considered a single homogeneous population (high probability of dropping to low levels) or whether population growth rates and levels of density dependence varied at a more localized rookery-level (certain rookeries would persist while others would not). Our IPM-based PVA represents an improved framework to examine subregion-specific factors underlying population dynamics that accounts for imperfect detection, temporal variance, and the effects of environmental variability on demography and therefore persistence. 
+
+Designing and implementing conservation and management actions for depleted wildlife populations is challenging, often complicated by diverse stakeholders with competing or poorly defined objectives, conflicting or ambiguous laws, and persistent gaps in scientific information. Conservation policies and management regulations must rely on the best available science during the development and implementation of recovery actions. However, monitoring a depleted top predator with a complex life history in a dynamic and changing ecosystem is a spatio-temporally complex and nuanced endeavor, and scaling up inferences from discrete studies and field sites over time and space to inform meaningful recommendations is an ongoing and iterative process. This study builds upon the demographic analyses developed by Warlick et al. (*in review*) to improve upon existing methods of estimating abundance, examine the sensitivity of population dynamics to changes in vital rates, and incorporate environmental variability into predictions of viability. This information will provide much-needed insights into population dynamics and potential factors limiting the recovery of the population in the western portion of the wDPS range that can inform future research, ongoing conservation and management decisions, and the evaluation of recovery goals and criteria. This work also serves as a useful framework for studying the effects of environmental variability on population dynamics and viability that could be applied to other species of conservation concern in a time of ongoing climatic changes throughout the world's ecosystems. 
+
+### **Methods**   
+
+*Study system*  
+The range of the wDPS of Steller sea lions includes rookery and haulout sites in the eastern, central, and western Gulf of Alaska (GoA) and the eastern, central, and western Aleutian Island (AI) management subregions (`r figs('map', display = 'cite')`). During the breeding season, adult male bulls establish rookery territories starting in May before reproductively mature females arrive to give birth from late May to early July (Pitcher et al. 2001, Kuhn et al. 2017). Throughout the summer, females with pups make short foraging trips that allow them to remain close to the rookery in order to nurse their young and build up energy reserves before going out to sea with their pups for the fall and winter (Raum-Suryan et al. 2002). Females exhibit a high degree of natal site fidelity and begin reproducing between the ages of 3 and 6 (Pitcher & Calkins 1981). 
+
+The Aleutian Island chain encompasses over 6,800 mi^2 and is composed of dozens of volcanic islands separated by passes where nutrient mixing and transport occur. The biological processes driving primary production and ecosystem dynamics across this vast and heterogeneous archepelago are shaped by a dividing line at Samalga Pass (170^∘W) (Ladd et al. 2005a, Stabeno et al. 2005, Stabeno & Hunt 2005). The shallower passes to the east of Samalga Pass are characterized by a higher diversity of forage fish that supports a more diverse sea lion diet and abundant piscivorous seabirds (Sinclair & Zeppelin 2002, Sinclair et al. 2005) compared to the deeper, colder, nutrient-rich passes to the west of Samalga Pass that are dominated by slower-growing forage fish and planktivorous seabirds (Hunt & Stabeno 2005, Sinclair et al. 2005, Rand et al. 2019). These generalized regional characteristics are an oversimplification of the fine-scale variability that affects the foraging conditions experienced by individual sea lions, but are important to keep in mind when examining factors that may contribute to the divergent trends in sea lion abundance observed in the subregions to the east (increasing or stable abundance) and west (decreasing) of Samalga Pass. 
+
+*Data*  
+Sea lion resights -- In this study, as in Warlick et al. (*in review*), we used observations of sea lions that were branded, released as pups, and resighted at rookeries in five subregions of the wDPS range from 2000-2017 (*n* = `r prettyNum(sum(brands_table$Total), big.mark = ',')`). The mark-resight data for each of these subregions consists of different numbers of cohorts marked and released in different years (`r figs('map', display = 'cite')`). Specifically, three smaller pup cohorts were marked and released (2001, 2003, 2005) from rookeries in the eastern GoA (Seal Rocks, Wooded, *n* = `r prettyNum(brands_table[brands_table$reg_0 == 'E GULF', 'Total'], big.mark = ',')`), six larger cohorts were marked and released nearly biennially starting in 2000 from rookeries the central GoA (Marmot and Sugarloaf,  *n* = `r prettyNum(brands_table[brands_table$reg_0 == 'C GULF', 'Total'], big.mark = ',')`) and eastern AI (Ugamak, *n* = `r prettyNum(brands_table[brands_table$reg_0 == 'E ALEU', 'Total'], big.mark = ',')`), three smaller cohorts were marked and released (2013, 2015, 2017) in the central AI (Ulak, *n* = `r prettyNum(brands_table[brands_table$reg_0 == 'C ALEU', 'Total'], big.mark = ',')`), four smaller cohorts were marked and released (2011, 2013, 2015, 2017) in the western AI (Agattu, *n* = `r prettyNum(brands_table[brands_table$reg_0 == 'W ALEU', 'Total'], big.mark = ',')`), and no cohorts were marked in the western GoA. In the eastern portion of the wDPS range (eastern-central GoA, eastern AI), survey effort occurred May through August during vessel- and land-based surveys, generating a total of approximately 39,300 and 25,150 sighting records of branded females and males, respectively. In the western portion of the range (central and western AI), resightings were primarily based on observations generated from remote cameras (citation?). 
+
+Aerial surveys of Steller sea lions throughout Alaska have been conducted since the 1980s, though with more spatial and temporal consistency beginning in the 2000s (Fritz et al. 2016). Surveys generally occur from late June to early July after most pups are born and when haulout rates are highest (Fritz et al. 2016). Approximately 200 survey sites have been identified within the range of the wDPS and grouped according to the six management subregions. Aerial survey images were processed by two analysts who independently counted and designated individuals as pups or non-pups (juveniles, sub-adult males, adult females, and male bulls). These raw counts from 2000 to 2021 were then modeled using the agTrend R package (Johnson & Fritz 2014) to derive range-wide predicted counts that account for the fact that not all regions were surveyed annually due to the constraints of funding availability and the logistics of surveying remote areas. 
+
+Based on the results of Warlick et al. (*in review*) and evidence documenting widespread impacts of the marine heatwave that persisted in the Gulf of Alaska from 2014-2016 (Suryan et al. 2021, Arimitsu et al. 2021), we chose to examine the effect of two covariates that may directly or indirectly influence sea lion demography: the North Pacific Gyre Oscillation (NPGO) and sea surface temperature (SST). Monthly data for the NPGO in summer months were obtained from the NOAA National Center for Environmental Information (NOAA NCEI 2020) and NOAA Physical Science Laboratory (NOAA PSL 2020) and averaged to create annual values. Monthly data for SST around the Aleutian Island chain (add lat/longs) in summer months (June-Aug) were obtained from the Copernicus Marine Environment Monitoring Service (Martin et al. 2019), averaged over time and space to create a single annual time series, and *Z*-scored. Though we recognize the spatio-temporal complexity and nuance of the effect of localized environmental conditions on long-lived, adaptive top predators, we used a single timeseries for each covariate in the estimation of vital rates in all subregions even though these conditions (and sea lions' responses to conditions) likely vary considerably across the wDPS range. We chose this more simplified approach to align with our intentions of creating an illustrative example rather than a predictive tool and to minimize the uncertainty in the estimation of fixed regional effects. 
+
+*Statistical analyses*  
+This integrated population model has two subcomponent models: a multi-event model (Kendall 2004, Pradel 2005) to estimate demographic rates based on mark-resight data and a state-space count model based on aerial survey data to estimate abundance. Multi-event models have been increasingly used to examine vital rates for species with complex life histories (Fujiwara & Caswell 2002, Fay et al. 2015, Tavecchia et al. 2016, Payo-Payo et al. 2016, Santidrian Tomillo 2017, Sanz-Aguilar et al. 2017, Champagnon et al. 2018, Himes Boor et al. *submitted*). As described in Warlick et al. (*in review*), we use a multi-event model to account for reproductive state uncertainty, as a nursing female may be seen with or without her pup. 
+
+*Multi-event model estimating demographic rates*  
+As described in detail by Warlick et al. (*in review*), true states were defined by an individual's age, sex, and reproductive state and included pups, yearlings, and age-2 individuals, juvenile individuals age 3-5, adult females with and without a pup, and adult males. If a female has not pupped by age 6, she automatically transitions into the non-pupping state (`r figs('life_cyc', display = 'cite')`). The state process model,
+
+\begin{equation}
+z_{i,t} | z_{i,t-1} \sim ~ \text{categorical}(\Omega_{z_{i,t-1},i,t-1}) (\#eq:ecolproc)
+\end{equation}
+
+describes the state *z* of individual *i* at occasion *t*, conditional on the individual’s state at the previous occasion, modeled as categorically distributed according to transition array $\Omega$, which is composed of survival ($\phi_\text{i,t}$) and pupping probability ($\psi_\text{i,t}$). Temporal variance in survival and pupping probabilities was modeled as a function of smoothed random effects of year, fixed effects of natal subregion, pup mass at branding, and environmental covariates, where for demographic rate parameter $\gamma$, 
+
+\begin{equation}
+\text{logit}(\gamma_\text{a,s,r,t}) = \mu_\text{a,s}^{\gamma} + \beta_\text{a,r}^{\gamma} \cdot \text{region}_{i} + \boldsymbol{x\prime} \boldsymbol{\beta}_\text{a}^{\gamma} + \epsilon_\text{a,r,t}^{\gamma} 
+\end{equation}
+
+where $\mu_\text{s,a}^{\gamma}$ is an age (*a*) and sex (*s*)-specific intercept, $\beta_\text{a,r}^{\gamma}$ is a fixed effect for natal region, $\boldsymbol{x}$ is a vector of covariates with associated coefficients $\boldsymbol{\beta}_\text{a}^{\gamma}$, and $\epsilon_\text{a,t}^{\gamma}$ is an annual (*t*) random effect. The intercept $\mu_\text{a,s}^{\gamma}$ for a given demographic rate was estimated using informed prior distributions based on the mean and standard deviations of estimates from sea lions marked and resighted in southeast Alaska during the early 2000's (Hastings et al. 2018). We applied penalized complexity priors (Simpson et al. 2017, van Erp et al. 2019) for defining prior distributions on fixed regional and environmental covariate effects and random year effects, which shrinks the coefficient toward zero in the absence of strong support for the effect and can increase parameter estimability and regulate model complexity. Fixed regional effects were assumed to be drawn from a Gaussian distribution as $\beta_\text{a,r}^{\gamma} \sim \text{N}(0, \sigma_{\gamma_\text{a}})$ with standard deviations $\sigma_{\gamma_\text{a}}$ distributed according to an exponential distribution with a fixed shrinkage rate $\sigma_{c,a} \sim \text{Exp}(\lambda = 1)$ to apply moderately strong shrinkage. Fixed effects were estimated for each of the six natal subregions for pups, yearlings, and age-2 individuals, while fixed effects of natal region for first-time and repeat pupping and survival of older age groups were shared for subregions in the eastern versus western portions of the wDPS range. 
+
+Random year effects were estimated only for subregions in the eastern portion of the wDPS range (due to insufficient sample sizes in the central and western AI) using an intrinsic Gaussian conditional autoregressive (CAR) model prior distribution that enforced autocorrelation between years, 
+
+$$\epsilon_\text{a,r,t}^{\gamma} \sim \text{CAR}(0, \sigma \textbf{Q}^{-1})$$
+
+where $\textbf{Q}$ is an intrinsic autoregression of order 2 (IAR(2); Speckman and Sun 2003) scaled by $\sigma$. The IAR(2) model imposes a smoothness constraint that estimates fewer parameters relative to independent random effects. For survival of pups, yearlings, age-2 individuals, and females with pups, random year effects were estimated for each of the four subregions in the eastern portion of the wDPS range. For survival of older age groups and pupping probabilities, random year effects were shared across all four of the easternmost subregions. Temporal variability was not estimated for several demographic rates due to poor estimability; namely, non-breeding female adult survival, first-time pupping probability for age-3 and age-5 individuals, and the probability of an age-6+ individual transitioning into the breeding group in *t+1* given an individual did not have a pup in year *t*. As no individuals were marked in the western GoA during the study period, demographic rate estimates for that subregion were largely informed by aerial survey data. 
+
+The effects of pup mass and environmental covariates (SST, NPGO) were estimated for the survival of young sea lions (pups, yearlings, and age-2; $\phi_\text{P:2}$), breeding females ($\phi_\text{B}$), and first-time ($\psi_\text{3:5}$) and repeat pupping probabilities ($\psi_\text{B}$) based on the assumption that those demographic rates would be the strongest drivers of population dynamics and most susceptible to environmental perturbation. 
+ 
+The events in the multi-event model are defined by the possible observations of adult females -- seen without a pup, seen with a pup, or not detected -- combined with an individual’s age,
+
+\begin{equation}
+y_{i,t} | z_{i,t} \sim ~ \text{categorical}(\Theta_{z_{i,t} i,t})  (\#eq:obsproc)
+\end{equation}
+
+where observations $y_\text{i,t}$ conditional on the true state $z_\text{i,t}$ are categorically distributed with probability array $\Theta$, which is composed of an individual's detection probability at time *t*, $p_\text{i,t}$, and the probability of correctly ascertaining the presence of a pup for female breeders, $\delta_\text{i,t}$. Temporal variation was modeled as, 
+
+\begin{equation}
+\text{logit}({p}_\text{a,s}) = \mu_\text{a,s}^p + \beta^p\cdot \text{eff}_{t} + \epsilon_t^p (\#eq:detection)
+\end{equation}
+
+where the mean intercept $\mu_\text{a,s}^p$ for each sex *s* and age *a* was estimated using a logit-transformed uniform (0,1) prior distribution. A categorical fixed effect was included to account for markedly lower resight survey effort in three years during the study period (2006, 2017, 2018), where $\beta^p\sim \text{N}(0, 0.001)$ is drawn from a Gaussian distribution. Interannual variability in detection probability was estimated with random year effects assumed to be drawn from a Gaussian distribution as $\epsilon_t^p \sim \text{N}(0, \sigma_\text{p})$, with standard deviations $\sigma_\text{p}$ estimated with shrinkage priors, distributed according to an exponential distribution with a fixed shrinkage rate as described above. As in Warlick et al. (2022), we used the number of sightings per individual per year (with pups or without) as a categorical covariate for the multi-event classification probability parameter, $\delta_{i,t}$.
+
+The typical set of mark-recapture model assumptions applied to this subcomponent model, where it was assumed that branding did not affect detection probability, that survival and the reproductive state of individuals were independent, there were no identification errors, mortality during the sampling season was negligible, and that there was no unmodeled heterogeneity in survival and detection probabilities.
+
+*State-space model to estimate pup abundance*  
+A state-space model was used to estimate pup abundance in year *t* in subregion *r* using the modeled posterior median and standard deviation of 'realized' counts for all rookeries and haulout sites across the range (surveyed and unsurveyed) based on output from the agTrend R package (Johnson & Fritz 2014). 
+
+\begin{equation}
+\text{N}_{\text{pup}_{r,t}} \sim \text{normal}(\text{N}_{\text{pup}_{r,t}}^\text{F}+\text{N}_{\text{pup}_{r,t}}^\text{M}, \sigma_{r,t}^{\text{pup}})
+\end{equation}
+
+where annual pup abundance $\text{N}_{\text{pup}_{r,t}}$ in region *r* is normally distributed with a mean of annual pup abundance estimated in the Leslie matrix (below) and variance $\sigma_{r,t}^{\text{pup}}$ equal to the variance of realized counts estimated using agTrend.  
+
+*Integrated model to estimate population abundance*  
+The demographic rate estimates were combined with the estimated pup abundance into an IPM framework using a stochastic Leslie matrix (`r figs('dag', display = 'cite')`). Neonate mortality was held constant at 5% (citation). The population process model was initialized one year prior to the start of the mark-resight data using a discrete uniform distribution with minimum and maximum values set at 75% and 125% of the calculated stable age distribution proportions of the combined pup and non-pup aerial survey counts. 
+
+$$\text{N}_{\text{B}_{r,1}} ~\sim \text{U}(\text{N}_{\text{min}_{r}} \cdot SA_\text{B} \cdot 0.75, \text{N}_{\text{min}_{r}} \cdot SA_\text{B} \cdot 1.25)$$
+
+The ratio of the total population compared to the number of pups was derived according to this population model and compared to the "pup multiplier" (4.5) formerly used to estimate abundance. In each year *t+1*, the number of individuals at a given age was modeled using a Poisson distribution based on the number of individuals and survival and pupping probabilities in the previous year *t*:
+
+$$ \left[\begin{array}
+{l}
+\text{N}_{\text{pup}_{r, t+1}}^\text{F} ~\sim \text{Bin}(0.5, \text{N}_{\text{B}_{r,t+1}}^\text{F}) \\
+\text{N}_{1_{r, t+1}}^\text{F}  ~\sim \text{Pois}(\text{N}_{\text{pup}_{r, t}}^\text{F}   \phi_{\text{pup}_{r,t}}^{\text{F}}\cdot m) \\
+\text{N}_{2_{r, t+1}}^\text{F} ~\sim \text{Pois}(\text{N}_{1_{r, t}}^\text{F} \phi_{\text{1}_{r,t}}^{\text{F}}) \\
+\text{N}_{3_{r, t+1}}^\text{F} ~\sim \text{Pois}(\text{N}_{2_{r, t}}^\text{F} \phi_{\text{2}_{r,t}}^{\text{F}}) \\
+\text{N}_{4_{r, t+1}}^\text{F} ~\sim \text{Pois}(\text{N}_{3_{r, t}}^\text{F} \phi_{\text{3}_{t}}^{\text{F}}  (1-\psi_3)) \\
+\text{N}_{5_{r, t+1}}^\text{F} ~\sim  \text{Pois}(\text{N}_{4_{r, t}}^\text{F}  \phi_{\text{4}_t}^{\text{F}}  (1-\psi_4))  \\
+\text{N}_{\text{B}_{r, t+1}}^\text{F} ~\sim \text{Pois}(\text{N}_{3_{r, t}}^\text{F}  \phi_{\text{3}_t}  \psi_3) + \text{Pois}(\text{N}_{4_{r, t}}^\text{F} \phi_{\text{4}_t} \psi_4)  + \text{Pois}(\text{N}_{5_{r, t}}^\text{F} \phi_{\text{5}_t} \psi_5) + \text{Pois}(\text{N}_{\text{B}_{r, t}}^\text{F} \phi_{\text{B}_t} \psi_\text{B}) + \text{Pois}(\text{N}_{\text{NB}_{r, t}}^\text{F} \phi_{\text{NB}_t} \psi_\text{NB}) \\
+\text{N}_{\text{NB}_{r, t+1}}^\text{F} ~\sim  \text{Pois}(\text{N}_{\text{B}_{r, t}}^\text{F}  \phi_{\text{B}_t} (1-\psi_\text{B})) + \text{Pois}(\text{N}_{\text{NB}_{r, t}}^\text{F} \phi_{\text{NB}_t}  (1-\psi_\text{NB})) + \text{Pois}(\text{N}_{5_{r, t}}^\text{F}  \phi_{\text{5}_t}^{\text{F}}  (1-\psi_5))\\ 
+\text{N}_{\text{pup}_{r, t+1}}^\text{M} ~\sim \text{Bin}(0.5, \text{N}_{\text{B}_{r,t+1}}^\text{F}) \\
+\text{N}_{1_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{\text{pup}_{r,t}}^\text{M}  \phi_{\text{pup}_{r,t}}^{\text{M}} \cdot m) \\
+\text{N}_{2_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{1_{r,t}}^\text{M} \phi_{\text{1}_{r,t}}^{\text{M}}) \\
+\text{N}_{3_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{2_{r,t}}^\text{M} \phi_{\text{2}_{r,t}}^{\text{M}}) \\
+\text{N}_{4_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{3_{r,t}}^\text{M} \phi_{\text{3}_t}^{\text{M}})\\
+\text{N}_{5_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{4_{r,t}}^\text{M} \phi_{\text{4}_t}^{\text{M}})\\
+\text{N}_{6_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{5_{r,t}}^\text{M} \phi_{\text{5}_t}^{\text{M}})\\
+\text{N}_{\text{A}_{r, t+1}}^\text{M} ~\sim \text{Pois}(\text{N}_{5_{r,t}}^\text{M}  \phi_{\text{5}_t}^{\text{M}})+\text{Pois}(\text{N}_{\text{A}_{r,t}}^\text{M}  \phi_{\text{A}_t}^{\text{M}})\\
+\end{array}\right]
+$$  
+
+Neonate mortality *m* was assumed to be 5% (citation). This IPM framework facilitated the derivation of the ratio of total abundance to the number of pups ($w_r = \frac{\text{N}_{\text{Tot}_{r}}}{\text{N}_{\text{pup}_{r}}}$).
+
+*Sensitivity and viability analyses*  
+We conducted a sensitivity analysis for each of the six management subregions by examining the correlation coefficient (*r*) between posterior mean annual population growth rates ($\lambda_t$) and annual age-specific female pupping and survival probabilities.
+
+To examine the viability of populations in each of the six management subregions, we projected the population forward in time (*t* = 100) using the posterior distributions of the random effect deviates estimated for the timeframe informed by mark-resight data (2000-2018). For each year in the 100-year projection period, we randomly selected one of the eighteen data years (with replacement) and applied the corresponding survival and pupping probabilies to derive stage-specific abundance at ${t+1}$. To examine the effect of environmental variability on population growth rates and viability, we randomly generated sets of predicted SST and NPGO values based on eight scenarios that increased or decreased the mean and/or standard deviation of each predictor for the 100-year projection period (`r tbls('sc_tab', display = 'cite')`). Due to the complex and variable nature of a top predator's response to environmental conditions, the comparison of projection scenarios is intended not as a predictive tool but as a simplified illustrative example of how environmental variability can impact population growth rates via the underlying demography. Posterior distributions of the population projections were summarized in terms of the average population growth rate, the probability of extinction (<2 individuals), the probability of having no remaining breeding females, and the probability of experiencing positive population growth. 
+
+*Model fitting*  
+The IPM was fit using NIMBLE (NIMBLE Development Team 2019) within the R programming environment (R Core Development 2018) using 45,000 iterations, 20,000 burn-in, an adaptation rate of 10, and thinning rate of 1. Convergence was evaluated using visual inspection of chains and the Brooks-Gelman-Rubin statistic (Gelman & Rubin 1992; Brooks & Roberts 1998) $\hat{R}$ < 1.1. Population projections were carried out in R using the MCMC chains from NIMBLE. 
+
+<!-- Leasure et al good description of IPM-based posterior predictions -->
+
+### **Results**  
+
+*Vital rates*    
+Over the study period, age-specific vital rates varied notably by region. Pup survival was notably lower than the range-wide average of `r round(mus[mus$variable == 'phiP', 'mu'],2)` (`r round(mus[mus$variable == 'phiP', 'mu_low'],2)`-`r round(mus[mus$variable == 'phiP', 'mu_up'],2)`) in the central AI (`r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'C.AI', 'med'],2)`, 95% CI: `r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'C.AI', 'lower'],2)`-`r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'C.AI', 'upper'],2)`) and higher than the range-wide average in the western AI (`r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'W.AI', 'med'],2)`, `r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'W.AI', 'lower'],2)`-`r round(phi_post[phi_post$variable == 'phiP' & phi_post$region == 'W.AI', 'upper'],2)`) (`r figs('phi_plot', display = 'cite')`). Pup survival in each of the four subregions with temporal variance showed lower rates during the later years of the study period (`r figs('phi_RE_plot', display = 'cite')`). Yearling survival was lower than the range-wide average of `r round(mus[mus$variable == 'phi1', 'mu'],2)` in the central AI (`r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'C.AI', 'med'],2)`, `r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'C.AI', 'lower'],2)`-`r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'C.AI', 'upper'],2)`) and western AI (`r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'W.AI', 'med'],2)`, `r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'W.AI', 'lower'],2)`-`r round(phi_post[phi_post$variable == 'phi1' & phi_post$region == 'W.AI', 'upper'],2)`). Survival of age-2 individuals was lower than the range-wide average of `r round(mus[mus$variable == 'phi2', 'mu'],2)` in the western AI (`r round(phi_post[phi_post$variable == 'phi2' & phi_post$region == 'W.AI', 'med'],2)`, `r round(phi_post[phi_post$variable == 'phi2' & phi_post$region == 'W.AI', 'lower'],2)`-`r round(phi_post[phi_post$variable == 'phi2' & phi_post$region == 'W.AI', 'upper'],2)`), but was otherwise relatively similar across the subregions. Survival of older juveniles did not vary notably across the subregions but exhibited a slightly negative trend over the study period. Female adult breeding survival was relatively similar across subregions with the exception of a lower average rate in the eastern AI, where rates declined from 2000-2008 (`r figs('phi_RE_plot', display = 'cite')`). 
+
+Age-specific pupping probabilities were highest for age-5 individuals and were similar across regions. The probability of pupping for age-4 individuals was lower in the eastern portion of the wDPS range and higher in the western portion relative to the range-wide average (`r figs('psi_plot', display = 'cite')`). The probability of pupping in subsequent years ($\psi_B$) increased from eastern to western subregions with the exception of the western AI where the rate was lowest. Temporal variance (estimated only for subregions in the eastern portion of the wDPS range for first-time pupping at age-5 ($\psi_4$) and repeat pupping ($\psi_\text{B}$) showed lower estimates at certain times during the study period (`r figs('psi_RE_plot', display = 'cite')`). 
+
+*Population growth rates, abundance, and age structure*  
+Over the twenty-year study period, the range-wide abundance of the wDPS increased from `r prettyNum(round(Ntot_range[Ntot_range$year == 1, 'med']), big.mark = ',')` (95% CI: `r prettyNum(round(Ntot_range[Ntot_range$year == 1, 'lower']), big.mark = ',')`-`r prettyNum(round(Ntot_range[Ntot_range$year == 1, 'upper']), big.mark = ',')`) in 2000 to `r prettyNum(round(Ntot_range[Ntot_range$year == 22, 'med']), big.mark = ',')` (`r prettyNum(round(Ntot_range[Ntot_range$year == 22, 'lower']), big.mark = ',')`-`r prettyNum(round(Ntot_range[Ntot_range$year == 22, 'upper']), big.mark = ',')`) in 2021, representing an average growth rate of `r round((mean(lambda_med_range)-1)*100,2)`% per year. However, abundance trends in each of the subregions varied, with an increasing abundance trend in the subregions in the eastern portion of the wDPS and a decreasing trend in the central and western AI subregions (`r figs('Ntot_plot', display = 'cite')`). Mean annual population growth rate was highest in the eastern AI (`r round((lambda_reg_wide[lambda_reg_wide$region == 'E.AI', 'med']-1)*100,2)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'E.AI', 'lower']-1)*100,2)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'E.AI', 'upper']-1)*100,2)`%) and central and western GoA (`r round((lambda_reg_wide[lambda_reg_wide$region == 'C.GoA', 'med']-1)*100,1)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'C.GoA', 'lower']-1)*100,1)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'C.GoA', 'upper']-1)*100,1)`% and `r round((lambda_reg_wide[lambda_reg_wide$region == 'W.GoA', 'med']-1)*100,1)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'W.GoA', 'lower']-1)*100,1)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'W.GoA', 'upper']-1)*100,1)`%, respectively) followed by the eastern GoA (`r round((lambda_reg_wide[lambda_reg_wide$region == 'E.GoA', 'med']-1)*100,2)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'E.GoA', 'lower']-1)*100,2)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'E.GoA', 'upper']-1)*100,2)`%) and the mean population growth rate was lowest in the central (`r round((lambda_reg_wide[lambda_reg_wide$region == 'C.AI', 'med']-1)*100,2)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'C.AI', 'lower']-1)*100,2)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'C.AI', 'upper']-1)*100,2)`%) and western Aleutians (`r round((lambda_reg_wide[lambda_reg_wide$region == 'W.AI', 'med']-1)*100,2)`%, `r round((lambda_reg_wide[lambda_reg_wide$region == 'W.AI', 'lower']-1)*100,2)`-`r round((lambda_reg_wide[lambda_reg_wide$region == 'W.AI', 'upper']-1)*100,2)`%) (`r figs('lambda_plot', display = 'cite')`). Abundance in the four subregions in the eastern portion of the wDPS (and the wDPS overall) declined 2015-2017 before increasing again 2018-2021. 
+
+The average age structure across the six subregions was approximately `r round(age_all[age_all$age == 'Pup', 'mean'], 1)*100`% pups, `r round(age_all[age_all$age == 'Pup', 'mean'], 1)*100`% breeding females, `r round(age_all[age_all$age == '1F', 'mean']*100 + age_all[age_all$age == '1M', 'mean']*100, 1)`% yearlings, `r round(sum(age_all[4:11,'mean'])*100,1)`% juveniles, `r round(age_all[age_all$age == 'Non-breeding female', 'mean']*100, 1)`% non-breeding females, and `r round(age_all[age_all$age == 'Adult male', 'mean']*100, 1)`% adult males. However, there were a few notable exceptions, including a lower proportion of pups and female breeders in the western AI relative to what would be expected based on a stable age distribution (Appendix I). In contrast, in the central AI, there was a higher proportion of pups with a lower proportion of yearlings and juveniles coinciding with a higher proportion of breeding females. The ratio of the total abundance relative to pups was approximately `r round(mean(mult_reg$mean),1)` (`r round(mean(mult_reg$lower),1)`-`r round(mean(mult_reg$upper),1)`), but varied over time and across the six subregions. Specifically, the Ntot:pups ratio was lower than the range-wide average in the eastern and western GoA and central AI, and higher than the range-wide average in the western AI.   
+
+*Sensitivity and viability*    
+Most female demographic rates were positively correlated with population growth rates, though credible intervals of many region-specific correlation coefficients overlapped zero with the exception of repeat pupping probability and survival of females with pups (`r figs('corr_plot', display = 'cite')`). The probability of extinction in 100 years was close to zero for the subregions with increasing population trends in the eastern portion of the wDPS range and in the central AI, but was approximately `r round(mean(p.ext[p.ext$reg == 'W.AI', 'value']),2)*100`% (95% CI: `r round(quantile(p.ext[p.ext$reg == 'W.AI', 'value'], probs = 0.025),3)*100`-`r round(quantile(p.ext[p.ext$reg == 'W.AI', 'value'], probs = 0.975),3)*100`%) in the western AI. Similarly, the probability of having no remaining female breeders was effectively zero in all subregions except the western Aleutians (`r round(quantile(p.ad.ext[p.ad.ext$reg == 'W.AI', 'value'], probs = 0.5),3)*100`%; `r round(quantile(p.ad.ext[p.ad.ext$reg == 'W.AI', 'value'], probs = 0.025),3)*100`-`r round(quantile(p.ad.ext[p.ad.ext$reg == 'W.AI', 'value'], probs = 0.975),3)*100`). The probability of experiencing a negative abundance trend was close to zero for all subregions in the eastern portion of the wDPS range and was approximately `r round(quantile(p.neg[p.neg$reg == 'C.AI', 'value'], probs = 0.5),3)*100`% and `r round(quantile(p.neg[p.neg$reg == 'W.AI', 'value'], probs = 0.5),3)*100` for the central and western AI subregions, respectively. 
+
+In terms of environmental effects, as reported in Warlick et al. (*in review*), warmer summer SST and positive-phase NPGO conditions were positively correlated with pupping probability and the survival of pups and yearlings (Figure?). The effect of changes in the mean and variability of SST and NPGO over the 100-year projection period varied across prediction scenarios and subregions. Overall, prediction scenarios with either a larger change in the mean or a larger degree of variability drove the greatest percentage changes in population growth rates (`r tbls('sc_tab', display = 'cite')`). However, the magnitude of the change in population growth rates varied based on the underlying demography in each of the six subregions, with particularly notable effects in the western AI, where rates of decline were slower relative to that predicted during baseline conditions in scenario 6 (warmer SST and warm-phase NPGO conditions with less variability) and faster and more uncertain in scenarios 3 (historical average with greater variability), 5 (lower mean SST and cool-phase NPGO with greater variability), and 8 (historical average with much greater variability) (`r figs('lambda_env_plot', display = 'cite')`, `r tbls('sc_tab', display = 'cite')`). 
+<!-- In subregions where population growth rates were high (the four subregions in the eastern portion of the wDPS range), population growth rates were similar across all 8 projection scenarios (`r figs('lambda_env_plot', display = 'cite')`).  -->
+
+### **Discussion**  
+
+This study combined mark-resight data and annual pup counts from aerial surveys to examine the demographic factors underlying the divergent trends in abundance within the six management subregions across the range of the wDPS in Alaska. Our results show how sea lion population dynamics are likely being affected by a combination of (a) average regional demographic differences, (b) temporal variance and trends, (c) variable age structure, and (d) environmental perturbation. This framework has led to an improved understanding of the differences in survival, reproduction, age structure, population growth, and the effects of environmental variability in each of the subregions and can therefore be useful in designing and implementing effective management and conservation strategies for this and other endangered populations. 
+
+Understanding regional differences in survival and natality over time and across the wDPS range is fundamental to gaining insights about the drivers of observed trends in Steller sea lion abundance. The IPM framework presented here builds upon the vital rates estimated in Warlick et al. (*in review*), but facilitated the estimation of more nuanced subregional differences than was possible using mark-resight data alone. With this finer spatial scale, results indicated that pup and/or yearling survival were notably low in the central and western AI subregions compared to the range-wide average. These lower pup and yearling survival rates west of Samalga Pass are likely strong drivers of the continued declining trend in those areas, and while it could be an indication of emigration to other rookeries and haul-outs, this is likely not the case as we did not find evidence of a correspondingly lower survival rate of breeding female adults (that would also be emigrating with dependent pups). The lower probability of repeat pupping (likely coinciding with or being driven by later weaning and the resulting higher pup survival) is likely a factor in the continuing decline in the westernmost subregion. Similarly, a lower pup survival rate coincides with a high probability of pupping in subsequent years in the central AI, where the age structure is characterized by a high probability of pups and a low proportion of yearlings and juveniles. The higher proportion of younger first-time breeding females in the Aleutian Islands subregions would likely not offset the low pup and yearling survival because offspring survival may be lower for inexperienced or younger females (citation) and population dynamics are often less sensitive to changes in first-time pupping relative to other vital rates. 
+
+In addition to supporting the estimation of vital rates at a finer subregional scale, this IPM framework improved the precision and estimability of temporal variation over the study period compared to previous work (Warlick et al. *in review*), facilitating the estimation of subregional time-varying estimates for pup, yearling, age-2, and breeding female survival, and range-wide time-varying estimates of juvenile survival and natality (repeat pupping and first-time pupping for age-5 individuals) for the eastern portion of the wDPS range. Our results indicated that the survival of pups, older juveniles, and breeding females has either experienced lower periods or gradually declined over the study period in each of the four easternmost subregions. Pup survival declined most notably in the eastern AI and the western GoA while breeding female survival declined most notably in the western GoA and eastern AI in the 2010's. Lower breeding female adult survival was also seen in the eastern GoA in the late 2010's (Maniscalco 2018) and could dampen population growth rates in areas with stable or growing populations or cause further declines if survival and pupping probabilities have also decreased in the western and central AI subregions where sample sizes were too small to estimate temporal variance. 
+
+The realized effects of these regional and interannual differences in demographic rate estimates are best conceptualized in terms of the sensitivity of population dynamics to age-specific survival and reproduction. Empirical evidence and ecological theory suggest that population dynamics are most sensitive to changes in adult survival (Heppell et al. 2000, Runge et al. 2004, Gormley et al. 2012), but also to fecundity and offspring survival (as the latter tend to experience greater variability and fluctuations in response to perturbation; Lacy et al. 2017, Manlik et al. 2017), consistent with our results. It is therefore likely that taken together, many of the regional differences and temporal trends in vital rates noted above play a role in the divergent abundance trends observed across the wDPS range, which is supported by our examination of the impacts of environmental perturbations on population growth rates. Of the seven environmental prediction scenarios, situations with greater variability or a change in the average conditions caused the most notable changes in population growth rates. But most importantly, the impacts of environmental perturbations were largest in the western AI subregion, where the population is the smallest and key demographic rates ($\phi_\text{1:2}$ and $\psi_\text{B}$ here) are depressed relative to the range-wide average. In other words, a population's response to environmental perturbation is dependent upon the magnitude of the covariate's effect, demographic rates, and the resulting age structure at any given time. 
+
+This simplified example of the effects of environmental perturbations we have presented here is not intended as a predictive tool, but instead should be seen as a theoretical representation of the complexity of quantifying the effects of changing ocean conditions on long-lived top predators. As central-place foragers, Steller sea lions rely on predictable aggregations of prey over time and space (Sigler et al. 2017), so it is likely that a fair amount of interannual variability in demography is driven by the availability of forage fish species, which may continue to shift with ongoing global climate change or the frequency of marine heatwaves (Arimitsu et al. 2021, Suryan et al. 2021). Our analysis contained several simplifying assumptions that could be enhanced in future studies with additional years of monitoring data. These include estimating the effects of covariates within each region based on localized ocean conditions rather than applying a single effect across the range, estimating the lag times and duration of covariate effects, incorporating density dependence (particularly relevant for subregions with increasing abundance trends), examining the effect of an increased frequency of extreme environmental conditions, and including temporal autocorrelation that would accurately capture the cyclic nature of basin-scale indices such as the NPGO. However, these shortcomings aside, this simplified example does highlight the importance of including environmental variability within viability analyses, as it can provide insights into a population's resilience to perturbation even if we lack the knowledge about underlying causal mechanisms such as specific changes in the abundance, distribution, or quality of preferred prey. Under prediction scenarios where environmental conditions would remain similar to historical conditions, the estimated probability of extinction for the western Aleutian Island subregion is still relatively small (~2%), though the 100-year time horizon is relatively short for a long-lived mammal and the population was projected to decline in 100% of simulations. An improved understanding of a population's sensitivity to environmental perturbation is fundamental to the underlying rationale in the assessment of threats within the context of the ESA and the development of recovery criteria. 
+
+Developing effective conservation measures and monitoring strategies that aim to maintain the resilience of stable populations or recover depleted populations rely on accurate and timely estimates of abundance. However, detecting trends in marine mammal abundance can be challenging due to the higher cost of surveys, small sample sizes, and the longer time series needed for long-lived mammals. While previous approaches of summing aerial survey counts or using a "pup multiplier" to derive total abundance have provided convenient and effective metrics for tracking trends, this IPM-based PVA framework represents a more robust estimation of abundance that accounts for uncertainty in female reproductive state and imperfect detection in mark-resight and aerial surveys. While the overall Ntot:pup ratio estimated in this study was approximately `r round(mean(mult_reg$mean),1)` (`r round(mean(mult_reg$lower),1)`-`r round(mean(mult_reg$upper),1)`), very close to 4.5, a closer examination of the regional and temporal variability in that ratio revealed how that approach may lead to biased or inaccurate abundance estimates for regions or time periods where age structure may not be stable, such as was found in this study for the central and western AI subregions. Relying on biased estimates of population growth rates for the subregions west of Samalga Pass (that have been the deciding factor in evaluating whether downlisting criteria have been met) may become increasingly problematic if and when abundance in these areas continues to decline.  
+
+This work highlights the importance of developing a unified approach for the continued monitoring of trends in demography for Steller sea lions across both the eastern and western DPS ranges. This IPM framework could be utilized to develop a strategic research strategy that would maximize available resources to obtain precise information about trends in vital rates and abundance to examine the effects of environmental variability, prey availability, and anthropogenic stressors over time horizons sufficient for long-lived mammals. Incorporating additional information on stressors to the population within this framework will continue to be useful in examining the abundance and long-term viability of Steller sea lions in Alaska and across the species range as new data on climate variability become available. Reducing uncertainty in region-specific and range-wide abundance estimates directly improves the decision-making process, as reliable estimates for all subregions are needed to assess whether the population meets the established downlisting criteria under the ESA. This framework could be useful for examining the population dynamics of other populations or species with divergent abundance trends observed across large geographic ranges with dynamic and complex relationships with oceanographic conditions. 
+
+
+### **Conclusion**  
+Text. 
+
+
+### **Acknowledgments**  
+
+
+\newpage
+
+### **Figures and Tables**  
+
+```{r map, eval = T}
+
+map
+
+```
+`r figs('map', caption = 'Steller sea lion field camps (blue triangles) in the eastern portion of the range, camera traps (green squares) in the western portion of the range, and rookeries (red) throughout the western distinct population segment (wDPS) (excluding Russia) and southeast Alaska (eastern DPS that extends along the U.S. West Coast). Table shows the number of branded and released pups in each region over the study period. Rectangles indicate locations from which satellite data were aggregated.')`
+
+```{r life cycle, eval = T}
+
+life_cyc
+
+```
+`r figs('life_cyc', caption = 'Life cycle diagram depicting ecological state process parameters for females and males.')`
+
+```{r dag, eval = T}
+
+dag
+
+```
+`r figs('dag', caption = 'Directed acyclic graph representing the integrated population model framework including subcomponent models using aerial survey and mark-resight data.')`
+
+
+```{r phi plot, eval = T}
+
+phi_plot
+
+```
+`r figs("phi_plot", caption = "Posterior mean and 95% credible intervals for age-specific survival of female Steller sea lions across the six wDPS subregions, with the range-wide average represented by the dashed line.")`
+
+```{r phi RE plot, eval = T}
+
+phi_RE_plot
+
+```
+`r figs("phi_RE_plot", caption = "Posterior mean and 95% credible intervals for time-varying Steller sea lion female survival rates across the six wDPS subregions.")`
+
+```{r psi plot, eval = T}
+
+psi_plot
+
+```
+`r figs("psi_plot", caption = "Posterior mean and 95% credible intervals for age-specific pupping probability for female Steller sea lions across the six wDPS subregions.")`
+
+
+```{r Ntot plot, eval = T}
+
+Ntot_plot
+
+```
+`r figs("Ntot_plot", caption = "Posterior mean and 95% credible intervals of total abundance of Steller sea lions in the six wDPS subregions (colors) and range-wide (black).")`
+
+```{r lambda plot, eval = T}
+
+lambda_plot
+
+```
+`r figs("lambda_plot", caption = "Posterior mean and 95% credible intervals of Steller sea lion population growth rates in the six wDPS subregions and range-wide (grey dashed line) from the IPM with the estimates from aerial survey data treated with agTrend (red asterisks).")`
+
+```{r age str plot, eval = T}
+
+age_plot
+
+```
+`r figs("age_plot", caption = "Posterior mean and 95% credible intervals of population age structure in each of the six wDPS subregions compared with the proportion expected according to a stable age distribution assumption (black dashed line).")`
+
+```{r mult plot, eval = T}
+
+mult_plot
+
+```
+`r figs("mult_plot", caption = "Posterior mean and 95% credible intervals of the ratio of total abundance to pups in each of the six wDPS subregions and overall, with the traditional 4.5 multiplier (black) and the regional averages (color) dashed lines.")`
+
+
+```{r corr plot, eval = T}
+
+corr_plot
+
+```
+`r figs("corr_plot", caption = "Posterior mean and 95% credible intervals for correlation coefficients between population growth rates and female demographic rates across the six wDPS subregions.")`
+
+```{r corr sum plot, eval = T}
+
+corr_sum_plot
+
+```
+`r figs("corr_sum_plot", caption = "Posterior mean and 95% credible intervals for correlation coefficients between population growth rates and female demographic rates across the six wDPS subregions.")`
+
+
+
+```{r proj plot, eval = T}
+
+proj_plot_all
+
+```
+`r figs("proj_plot", caption = "(a) Total Steller sea lion abundance in each of the six wDPS subregions over the 100-year projection period, and (b) probabilities of extinction, breeding adult female extinction, and a negative abundance trend.")`
+
+```{r env proj plot, eval = T}
+
+lambda_env_plot
+
+```
+`r figs("proj_plot", caption = "Mean and 95% CI of population growth rates during the projection period across 8 projection scenarios with varying mean and standard deviation of generated predictor variables compared with the baseline scenario using the mean and variability of historical conditions.")`
+
+`r tbls("sc_tab", caption = "Description of scenarios for generating predicted sea surface temperature and North Pacific Gyre Oscillation for examining the effects of environmental variability on population dynamics and viability, with mean and standard deviations of oceanographic predictors 50% or 100% smaller or larger than historical conditions. The percentage change represents the average change in population growth rates from the baseline scenario across regions and projection simulations.")`
+```{r sc table, eval = T}
+
+kable(sc_tab)
+
+```
+
+\newpage
+
+### **Literature Cited**
+
+Atkinson, S., D.P. Demaster, and D.G. Calkins. 2008. Anthropogenic Causes of the Western Steller Sea Lion Eumetopias Jubatus Population Decline and Their Threat to Recovery. Mammal Review 38 (1): 1–18. doi:10.1111/j.1365-2907.2008.00128.x.
+
+Benson, A.J., and A.W. Trites. 2002. Ecological Effects of Regime Shifts in the Bering Sea and Eastern North Pacific Ocean. Fish and Fisheries 3 (2): 95–113. doi:10.1046/j.1467-2979.2002.00078.x.
+
+Boltnev AI, York AE, Antonelis GA. 1998. Northern fur seal young: interrelationships among birth size, growth, and survival. Candian Journal of Zoology 76:843–854.
+
+Boyd IL. 1990. State-dependent fertility in pinnipeds: contrasting capital and income breeders. Functional Ecology 14:623–630.
+
+Brooks, S.P. & Roberts, G.O. 1998. Convergence assessment techniques for Markov chain Monte Carlo. Statistics and Computing, 8, 319-335.
+
+Conn, P.B., D.S. Johnson, L.W. Fritz, and B.S. Fadely. 2014. Examining the Utility of Fishery and Survey Data to Detect Prey Removal Effects on Steller Sea Lions (Eumetopias Jubatus). Canadian Journal of Fisheries and Aquatic Sciences 71 (8): 1229–42. doi:10.1139/cjfas-2013-0602.
+
+Copernicus Marine Environment Monitoring Service, 2020.  https://resources.marine.copernicus.eu/documents/PUM/CMEMS-MOB-PUM-015-002.pdf
+
+de Valpine, P., D. Turek, C.J. Paciorek, C. Anderson-Bergman, D. Temple Lang, an
+  Bodik. NIMBLE Development Team. 2019. Programming with models: writing statistical algorithms for general model structures with NIMBLE. Journal of Computational and Graphical Statistics 26: 403-413. <DOI:10.1080/10618600.2016.1172487>.
+
+Di Lorenzo E., Schneider N., Cobb K. M., Chhak, K, Franks P. J. S., Miller A. J., McWilliams J. C., Bograd S. J., Arango H., Curchister E., Powell T. M. and P. Rivere, 2008: North Pacific Gyre Oscillation links ocean climate and ecosystem change. Geophys. Res. Lett., 35, L08607, doi:10.1029/2007GL032838.
+
+Fritz, L., K. Sweeney, D. Johnson, M. Lynn, T. Gelatt, and J. Gilpatrick. 2013. Aerial and ship- based surveys of Steller sea lions (Eumetopias jubatus) conducted in Alaska in June-July 2008 through 2012, and an update on the status and trend of the western distinct population segment in Alaska. U.S. Dep. Commer., NOAA Tech. Memo. NMFS-AFSC- 251, 92 p.
+
+Fritz L., R. Towell, T. Gelatt, D. Johnson, and T. Loughlin. 2014. Recent increases in survival of western Steller sea lions in Alaska and implications for recovery. Endang. Spec. Res. 26(1):13–24. doi: 10.3354/esr00634.
+
+Fritz, L., K. Sweeney, R. Towell, and T. Gelatt. 2016. Aerial and ship- based surveys of Steller sea lions (Eumetopias jubatus) conducted in Alaska in June-July 2013 through 2015, and an update on the status and trend of the western distinct population segment in Alaska. U.S. Dep. Commer., NOAA Tech. Memo. NMFS-AFSC-321, 72 p. doi:10.7289/V5/TM-AFSC-321.
+
+Gelman, A. & Rubin, D.B. 1992. Inference from iterative simulation using multiple sequences. Statist. Sci., 7, 457-472.
+
+Higgins, R. W., A. Leetmaa, Y. Xue, and A. Barnston, 2000: Dominant factors influencing the seasonal predictability of U.S. precipitation and surface air temperature. J. Climate, 13, 3994-4017.
+
+Holmes, E.E., L.W. Fritz, A.E. York, and K. Sweeney. 2007. Age-Structured Modeling Reveals Long-Term Declines in the Natality of Western Steller Sea Lions. Ecological Applications 17 (8): 2214–32. doi:10.1890/07-0508.1.
+
+Johnson, D. S., and L. W. Fritz. 2014. agTrend: A Bayesian approach for estimating trends of aggregated abundance. Methods in Ecology and Evolution 5(10): 1110-1115.
+
+Kuhn, C.E., K.C., D. Johnson, and L. Fritz. 2017. A Re-Examination of the Timing of Pupping for Steller Sea Lions Eumetopias Jubatus Breeding on Two Islands in Alaska. Endangered Species Research 32: 213–22. doi:10.3354/esr00796.
+
+Lander, M., T. Loughlin, M. Logsdon, G. VanBlaricom, and B. Fadely. 2010. Foraging Effort of Juvenile Steller Sea Lions Eumetopias Jubatus with Respect to Heterogeneity of Sea Surface Temperature. Endangered Species Research 10 (March): 145–58. doi:10.3354/esr00260.
+
+Lander, M.E., M.L. Logsdon, T.R. Loughlin, and G. Van Blaricom. 2011. Spatial Patterns and Scaling Behaviors of Steller Sea Lion (Eumetopias Jubatus) Distributions and Their Environment. Journal of Theoretical Biology 274 (1): 74–83. doi:10.1016/j.jtbi.2011.01.015.
+
+Lander, M.E., Fadely, B.S., Gelatt, T.S., Sterling, J.T., Johnson, D.S., Pelland, N.A., 2020. Mixing it up in Alaska: Habitat use of adult female Steller sea lions reveals a variety of foraging strategies. Ecosphere 11, e03021. https://doi.org/10.1002/ecs2.3021
+
+Lee PC, Majluf P, Gordon IJ. 1991. Growth, weaning and maternal investment from a comparative perspective. Journal of Zoology 225:9–114.
+
+Loughlin, T.R. 1997. Using the phylogeographic method to identify Steller sea lion stocks. Molecular Genetics of Marine Mammals 3:159-171.
+
+Loughlin, T.R., and A.E. York. 2000. “An Accounting of the Sources of Steller Sea Lion, Eumetopias Jubatus, Mortality.” Marine Fisheries Review, 6.
+
+Maniscalco, J.M., Springer, A.M., Parker, P., 2010. High Natality Rates of Endangered Steller Sea Lions in Kenai Fjords, Alaska and Perceptions of Population Status in the Gulf of Alaska. PLOS ONE 5, e10076. https://doi.org/10.1371/journal.pone.0010076
+
+Maniscalco, J.M., A.M., Springer, P. Parker, M.D. Adkinson. 2014. A longitudinal study of Steller sea lion natality rates in the Gulf of Alaska with comparisons to census data. PLOS One 9:e111523.
+
+Maniscalco, J.M., 2014. The Effects of Birth Weight and Maternal Care on Survival of Juvenile Steller Sea Lions (Eumetopias jubatus). PLOS ONE 9, e96328. https://doi.org/10.1371/journal.pone.0096328
+
+Maniscalco, J. M. 2018. NOAA/NMFS 5-year status review for Endangered Steller sea lions –
+Comments.
+
+Mannocci, L., A.M. Boustany, J.J. Roberts, D.M. Palacios, D.C. Dunn, P.N. Halpin, S. Viehman, et al. 2017. Temporal Resolutions in Species Distribution Models of Highly Mobile Marine Animals: Recommendations for Ecologists and Managers. Diversity and Distributions 23 (10): 1098–1109. doi:10.1111/ddi.12609.
+
+Mantua, N. J., S. R. Hare, Y., Zhang, J. M. Wallace, and R. C. Francis, 1997: A Pacific interdecadal climate oscillation with impacts on salmon production. Bull. Am. Met. Soc., 76, 1069-1079.
+
+Martin, M., McLaren, A., Good, S., 2019. PRODUCT USER MANUAL For Global Ocean GMPE Sea Surface Temperature Multi Product Ensemble SST_GLO_SST_L4_NRT_OBSERVATIONS_010_005 16.
+
+McMahon CR, Hindell MA. 2003. Twinning in southern elephant seals: implications of resource allocation by mothers. Wildlife Research 30:35–39.
+
+McMahon, C.R., Burton, H.R., 2005. Climate change and seal survival: evidence for environmentally mediated changes in elephant seal, Mirounga leonina, pup survival. Proceedings of the Royal Society B: Biological Sciences 272, 923–928. https://doi.org/10.1098/rspb.2004.3038
+
+Merrick, R.L., M.K. Chumbley, and G.V Byrd. 1997. Diet Diversity of Steller Sea Lions (Eumetopias Jubatus) and Their Population Decline in Alaska: A Potential Relationship. Canadian Journal of Fisheries and Aquatic Sciences 54 (6): 1342–8. doi:10.1139/f97-037.
+
+NASA Goddard Space Flight Center, Ocean Ecology Laboratory, Ocean Biology Processing Group. 2018. Sea-viewing Wide Field-of-view Sensor (SeaWiFS) R2018.0 Chlorophyll Data; NASA OB.DAAC, Greenbelt, MD, USA. doi: https://dx.doi.org/10.5067/ORBVIEW-2/SEAWIFS/L3M/CHL/2018.
+
+NOAA NCEI, 2020. NOAA Climate monitoring teleconnections: Arctic Oscillation. https://www.ncdc.noaa.gov/teleconnections/ao/ accessed July 1, 2020.
+
+NOAA PSL, 2020. NOAA Physical Sciences Laboratory: Gridded Climate Datasets. https://psl.noaa.gov/data/gridded/tables/ocean.html accessed July 1, 2020.
+
+Pascual, M.A., and M.D. Adkison. 1994. The Decline of the Steller Sea Lion in the Northeast Pacific: Demography, Harvest or Environment? Ecological Applications 4 (2): 393–403. doi:10.2307/1941942.
+
+Pitcher, K.W., and D.G. Calkins. 1981. Reproductive Biology of Steller Sea Lions in the Gulf of Alaska. Journal of Mammalogy 62 (3): 599–605. doi:10.2307/1380406.
+
+Pitcher, K.W., V.N. Burkanov, D.G. Calkins, B.J. Le Boeuf, E.G. Mamaev, R.L. Merrick, and G.W. Pendleton. 2001. Spatial and Temporal Variation in the Timing of Births of Steller Sea Lions. Journal of Mammalogy 82 (4): 1047–53. doi:10.1644/1545-1542(2001)082<1047:SATVIT>2.0.CO;2.
+
+Pfister CM. 1998. Patterns of variance in stage-structured populations: evolutionary predictions and ecologi- cal implications. Proc Nat Acad Sci. 1998; 95: 213–218. PMID: 9419355
+
+Proffitt KM, Rotella JJ, Garrott RA. 2010. Effects of pup age, maternal age, and birth date on pre-weaning survival rates of Weddell seals in Erebus Bay, Antarctica. Oikos 119:1255–1264.
+
+Raum-Suryan, K.L., K.W. Pitcher, D.G. Calkins, J.L. Sease, and T.R. Loughlin. 2002. Dispersal, Rookery Fidelity, and Metapopulation Structure of Steller Sea Lions (Eumetopias Jubatus) in an Increasing and a Decreasing Population in Alaska. Marine Mammal Science 18 (3): 746–64. doi:10.1111/j.1748-7692.2002.tb01071.x.
+
+Rodionov, S.N., Bond, N.A., Overland, J.E., 2007. The Aleutian Low, storm tracks, and winter climate variability in the Bering Sea. Deep Sea Research Part II: Topical Studies in Oceanography 54, 2560–2577. https://doi.org/10.1016/j.dsr2.2007.08.002
+
+Rodionov, S.N., Overland, J.E., Bond, N.A., 2005. Spatial and temporal variability of the Aleutian climate. Fisheries Oceanography 14, 3–21. https://doi.org/10.1111/j.1365-2419.2005.00363.x
+
+Rotella JJ, Link WA, Chambert T, Stauffer GE, Garrott RA. 2012. Evaluating the demographic buffering hypothesis with vital rates estimated for Weddell seals from 30 years of mark-recapture data. J Anim Ecol. 2012; 81: 162–173. doi: 10.1111/j.1365-2656.2011.01902.x PMID: 21939440
+
+Seckel, G.R. 1993. Zonal gradient of the winter sea level atmospheric pressure at 50 N: an indicator of atmospheric forcing of North Pacific surface conditions. J. Geophys. Res. 98:22615–22628.
+
+Simons, R.A. (2019). ERDDAP. https://coastwatch.pfeg.noaa.gov/erddap. Monterey, CA: NOAA/NMFS/SWFSC/ERD.
+
+Sinclair, E.H., Zeppelin, T.K., 2002. Seasonal and Spatial Differences in Diet in the Western Stock of Steller Sea Lions (Eumetopias Jubatus). Journal of Mammalogy 83, 973–990. https://doi.org/10.1644/1545-1542(2002)083<0973:SASDID>2.0.CO;2
+
+Sinclair, E. H., D. S. Johnson, T. K. Zeppelin, and T. S. Gelatt. 2013. Decadal variation in the diet of Western Stock Steller sea lions (Eumetopias jubatus). U.S. Dep. Commer., NOAA Tech. Memo. NMFS-AFSC-248, 67 p.
+
+Sweeney, K., Towell, R., Gelatt, T. 2018. Results of Steller Sea Lion Surveys in Alaska, June-July 2017. NOAA Fisheries Alaska Fisheries Science Center Marine Mammal Laboratory, Seattle, WA.  https://media.fisheries.noaa.gov/dam-migration/ssl_aerial_survey_2018_final.pdf
+
+Thomas JA, DeMaster DP. 1983. Parameters affecting survival of Weddell seal pups (Leptonychotes weddelli) to weaning. Canadian Journal of Zoology 61:2078–2083. 
+
+Trillmich F. 1990. The behavioral ecology of maternal effort in fur seals and sea lions. Behaviour 114:3–20.
+
+Trites, A. W., and C. P. Donnelly. 2003. “The Decline of Steller Sea Lions Eumetopias Jubatus in Alaska: A Review of the Nutritional Stress Hypothesis.” Mammal Review 33 (1): 3–28. doi:10.1046/j.1365-2907.2003.00009.x.
+
+York, A.E. 1994. The Population Dynamics of Northern Sea Lions, 1975-1985. Marine Mammal Science 10 (1): 38–51. doi:10.1111/j.1748-7692.1994.tb00388.x.
+
+York, A. E., J. R. Thomason, E. H. Sinclair, and K.A. Hobson. 2008. Stable carbon and nitrogen isotope values in teeth of Steller sea lions: Age of weaning and the impact of the 1975- 1976 regime shift in the North Pacific Ocean. Can. J. Zool. 86: 33-44.
+
+Watanabe, S., 2010. Asymptotic Equivalence of Bayes Cross Validation and Widely Applicable Information Criterion in Singular Learning Theory. Journal of Machine Learning Research 11.
+
+Wiens JA .1989. Spatial scaling in ecology. Funct Ecol 3: 385 – 397.
+
+Wright, B.E., Brown, R.F., DeLong, R.L., Gearin, P.J., Riemer, S.D., Laake, J.L., Scordino, J.J., 2017. Survival rates of Steller sea lions from Oregon and California. J Mammal 98, 885–894. https://doi.org/10.1093/jmammal/gyx033
+
+Zhang, R.H. and S. Levitus, 1997: Structure and cycle of decadal variability of upper-ocean temperature in the North Pacific. J. Climate, 10, 710-727.
+
+
+
+<!-- ### Parameter Table? -->
+
+<!-- |Parameter                             | Description                            | -->
+<!-- |--------------------------------------|---------------------------------------:| -->
+<!-- |$\phi_\text{t,age}$                    | Survival probability                   | -->
+<!-- |$\epsilon_\phi_{\text{t,age}}$         | Random effect for survival             | -->
+<!-- |$\psi_\text{age}$                      | Breeding probability                   | -->
+<!-- |$\epsilon_\psi_{\text{t,age}}$         | Random effect for breeding             | -->
+<!-- |$p_\text{t,age}$                       | Detection probability                  | -->
+<!-- |$\epsilon_\text{p}_{\text{t}}$         | Random effect for detection            | -->
+<!-- |$\delta$                               | State assignment probability           | -->
+<!-- |$\beta_\text{p}$                       | Effect reduced resight effort          | -->
+<!-- |$\beta_{\text{mass}, \phi}$            | Effect of mass on survival             | -->
+<!-- |$\beta_{\text{mass}, \psi}$            | Effect of mass on breeding             | -->
+<!-- |$\beta_{\text{env}, \phi}$             | Effect of environment on survival      | -->
+<!-- |$\beta_{\text{env}, \psi}$             | Effect of environment on breeding      | -->
