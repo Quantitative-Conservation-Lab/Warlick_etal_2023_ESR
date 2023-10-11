@@ -16,7 +16,10 @@ Understanding spatio-temporal variability in demography and the influence of env
 
 #### [Scripts](./scripts)
 
-Contains the script to run all analyses: SSL_wDPS_IPM.Rmd.
+Contains the script to process raw data and run all analyses. 
+
+-- SSL_wDPS_IPM_data.Rmd processes mark-resight observations into annual resightings histories.  
+-- SSL_wDPS_IPM.Rmd loads in processed data and runs estimation models and viability simulation projections including environmental variability scenarios. 
  
 #### [Data](./Data) 
 
@@ -49,9 +52,7 @@ lubridate_1.7.10
 
 ### Details of Article 
 
-(Citation here, see example) 
-
-Warlick AJ, DS Johnson, TS Gelatt, and SJ Converse. 2022. Environmental drivers of demography and potential factors limiting the recovery of an endangered marine top predator. Ecosphere 2022:e4325. https://doi.org/10.1002/ecs2.4325. 
+Warlick AJ, DS Johnson, TS Gelatt, and SJ Converse. 2022. Examining the effect of environmental variability on the viability of endangered Steller sea lions using an integrated population model. Animal Conservation. https://doi.org/10.3354/esr01282
 
 ### How to Use this Repository 
 
