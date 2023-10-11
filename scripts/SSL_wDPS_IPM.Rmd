@@ -115,156 +115,6 @@ psi_ests <- data.frame(med = c(0.2, 0.6, 0.4, 0.8, 0.5),
 
 ```
 
-```{r aerial survey data}
-
-###count data
-np_raw <- read.csv(here::here('Data', 'wdpsnp_count_region.csv'), 
-                     header = T, stringsAsFactors = F) %>%
-  filter(year > 1999) %>%
-  transform(se.real = ifelse(se.real < 2, 2, se.real))
-
-
-np_reg_med <- np_raw %>%
-  group_by(year, region) %>%
-  dplyr::rename(n_np = est.real) %>%
-  transform(region = factor(region, levels = c('C GULF', 'E ALEU', 'E GULF',
-                                               'W GULF', 'C ALEU', 'W ALEU'))) %>%
-  reshape2::dcast(year ~ region, value.var = 'n_np') %>% dplyr::select(-year)
-
-np_reg_sd <- np_raw %>%
-  group_by(year, region) %>%
-  transform(region = factor(region, levels = c('C GULF', 'E ALEU', 'E GULF',
-                                               'W GULF', 'C ALEU', 'W ALEU'))) %>%
-  reshape2::dcast(year ~ region, value.var = 'se.real') %>% dplyr::select(-year)
-  
-#pups
-pups_raw <- read.csv(here::here('Data', 'wdpspup_count_region.csv'), 
-                     header = T, stringsAsFactors = F) %>%
-  filter(year > 1999) %>%
-  #if surveyed == 0, adopt pred, but this is built-in already
-  # transform(median.fill = ifelse(surveyed == 0, est.pred, est.real),
-  #           low.fill = ifelse(surveyed == 0, ci.pred.lower, ci.real.lower),
-  #           high.fill = ifelse(surveyed == 0, ci.pred.upper, ci.real.upper)) %>%
-  # transform(sd = (high.fill-low.fill)/4) %>%
-  transform(se.real = ifelse(se.real < 2, 2, se.real))
-
-pups_reg_med <- pups_raw %>%
-  group_by(year, region) %>%
-  dplyr::rename(n_pup = est.real) %>%
-  transform(region = factor(region, levels = c('C GULF', 'E ALEU', 'E GULF',
-                                               'W GULF', 'C ALEU', 'W ALEU'))) %>%
-  reshape2::dcast(year ~ region, value.var = 'n_pup') %>% dplyr::select(-year)
-
-pups_reg_sd <- pups_raw %>%
-  group_by(year, region) %>%
-  transform(region = factor(region, levels = c('C GULF', 'E ALEU', 'E GULF',
-                                               'W GULF', 'C ALEU', 'W ALEU'))) %>%
-  reshape2::dcast(year ~ region, value.var = 'se.real') %>% dplyr::select(-year)
-
-#pups
-ggplot(pups_raw %>% filter(year > 1999) %>%
-         transform(region = factor(region, levels = c("C GULF", "E ALEU", "E GULF",
-                                                        "W GULF", "C ALEU", "W ALEU"))), 
-       aes(x = year, y = est.real, group = region, color = region)) +
-  geom_point(position = position_dodge(0.5)) + geom_line(position = position_dodge(0.5)) +
-  geom_errorbar(aes(x = year, ymin = ci.real.lower, ymax = ci.real.upper), position = position_dodge(0.5)) +
-  ylab('Number of pups') +
-  scale_color_manual(values = rainbow2[-c(1,4)]) +
-  plot_theme(panel.border = element_rect(fill = NA), legend.position = 'top')
-
-#non-pups
-ggplot(np_raw %>% filter(year > 1999) %>%
-         transform(region = factor(region, levels = c("C GULF", "E ALEU", "E GULF",
-                                                        "W GULF", "C ALEU", "W ALEU"))), 
-       aes(x = year, y = est.real, group = region, color = region)) +
-  geom_point(position = position_dodge(0.5)) + geom_line(position = position_dodge(0.5)) +
-  geom_errorbar(aes(x = year, ymin = ci.real.lower, ymax = ci.real.upper), position = position_dodge(0.5)) +
-  ylab('Number of non-pups') +
-  scale_color_manual(values = rainbow2[-c(1,4)]) +
-  plot_theme(panel.border = element_rect(fill = NA), legend.position = 'top')
-
-#age class data
-class_dat <- read.csv(here::here('data', 'class_dat.csv'), header = T, stringsAsFactors = F) %>%
-  filter(Region != 'SE AK') %>%
-  # group_by(Region) %>%
-  dplyr::summarize(Pup = sum(Pup, na.rm = T), Bull = sum(Bull, na.rm = T), SAM = sum(SAM, na.rm = T),
-                   Female = sum(Female, na.rm = T),
-                   Juv = sum(Juv, na.rm = T), .groups = 'keep') %>%
-  transform(prop_f = (Female+(Juv/2)+(Pup/2))/(Female+SAM+Bull+Pup+Juv))
-
-prop_f <- mean(class_dat$prop_f)
-
-#derive and use sd
-#option 1: sum by site and use mean/sd between obs1 and obs2
-class_dat <- read.csv(here::here('data', 'class_dat.csv'), header = T, stringsAsFactors = F) %>%
-  filter(Region != 'SE AK') %>% dplyr::select('Site', 'Year', 'Region', 'Pup', 'Bull', 'SAM',
-                                              'Female', 'Juv', 'Obs') %>%
-  #make all NA's zeros
-  reshape2::melt(id.vars = c('Region', 'Year', 'Site', 'Obs')) %>%
-  transform(value == ifelse(is.na(value), 0, value)) %>%
-  reshape2::dcast(Region + Site + Year + Obs ~ variable, value.var = 'value') %>%
-  transform(prop_f = (Female+(Juv/2)+(Pup/2))/(Female+SAM+Bull+Pup+Juv)) %>%
-  group_by(Region) %>%
-  dplyr::summarize(prop_f_mean = mean(prop_f, na.rm = T), prop_f_sd = sd(prop_f, na.rm = T))
-
-#option 2: pick one obs and use mean/sd across sites/years within region
-class_dat <- read.csv(here::here('data', 'class_dat.csv'), header = T, stringsAsFactors = F) %>%
-  filter(Region != 'SE AK' & Obs == 1) %>% dplyr::select('Site', 'Year', 'Region', 'Pup', 'Bull', 'SAM',
-                                              'Female', 'Juv') %>%
-  #make all NA's zeros
-  reshape2::melt(id.vars = c('Region', 'Year', 'Site')) %>%
-  transform(value == ifelse(is.na(value) | value == 'NA' | value == '', 0, value)) %>%
-  reshape2::dcast(Region + Site + Year ~ variable, value.var = 'value') %>%
-  transform(prop_f = (Female+(Juv/2)+(Pup/2))/(Female+SAM+Bull+Pup+Juv)) %>%
-  group_by(Region) %>%
-  dplyr::summarize(prop_f_mean = mean(prop_f, na.rm = T), prop_f_sd = sd(prop_f, na.rm = T)) %>%
-  transform(Region = factor(Region, levels = c("C GULF", "E ALEU", "E GULF",
-                                                        "W GULF", "C ALEU", "W ALEU"))) %>%
-  arrange(Region)
-
-class_props <- read.csv(here::here('data', 'class_dat.csv'), header = T, stringsAsFactors = F) %>%
-  filter(Region != 'SE AK') %>% dplyr::select('Site', 'Year', 'Region', 'Pup', 'Bull', 'SAM',
-                                              'Female', 'Juv', 'Obs') %>%
-  transform(Tot = Pup + Bull + SAM + Female + Juv) %>%
-  transform(Pup = Pup/Tot, Bull = Bull/Tot, Female = Female/Tot, Juv = Juv/Tot) %>%
-  group_by(Region) %>%
-  dplyr::summarize(Pup = mean(Pup, na.rm = T), Bull = mean(Bull, na.rm = T), 
-                   SAM = mean(SAM, na.rm = T), 
-                    Female = mean(Female, na.rm = T), Juv = mean(Juv, na.rm = T))
-
-#Nmin and pup multiplier approaches
-Nmin <- pups_raw %>% dplyr::select(region, year, est.real) %>%
-  transform(type = 'pup') %>%
-  bind_rows(np_raw %>% dplyr::select(region, year, est.real) %>%
-              transform(type = 'np')) %>%
-  reshape2::dcast(region + year ~ type, value.var = 'est.real') %>%
-  transform(Nmin = np+pup)
-
-ggplot(Nmin, aes(year, Nmin)) +
-  geom_line() + geom_point() +
-  facet_wrap(~region) +
-  plot_theme()
-
-Nmin_lambda_mean <- array(NA, dim = c(6, n_occasions-1))
-years <- 2000:2018
-nyears.burnin <- 0
-regs <- c('E GULF', 'C GULF', 'W GULF', 'E ALEU', 'C ALEU', 'W ALEU')
-for (r in 1:6) {
-  for (t in (nyears.burnin+2):(n_occasions+nyears.burnin)) {
-  Nmin_lambda_mean[r,(t-nyears.burnin-1)] <- Nmin[Nmin$region == regs[r] &
-                               Nmin$year == (years[t]), 'Nmin']/
-        Nmin[Nmin$region == regs[r] &
-                    Nmin$year == (years[t]-1), 'Nmin']
-  }
-}
-
-Nmin_lambda_reg <- data.frame(reg = regs,
-                              est = c(apply(Nmin_lambda_mean, 1, mean)))
-write.csv(Nmin_lambda_reg, file = here::here('data', 'agTrend_Nmin_lambda.csv'), row.names = F)
-
-
-```
-
 ```{r aerial survey NEW agTrend modeled count data}
 
 #after discussion with Tom, Katie, Devin Feb 2023
@@ -2587,6 +2437,1322 @@ out_3 <- readRDS(here::here('results', 'best', paste("out.parallel-", version, "
 library(coda)
 out <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
 
+
+```
+
+
+
+```{r sensitivity}
+
+    out_1 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-1.RDS", sep = "")))
+    out_2 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-2.RDS", sep = "")))
+    out_3 <- readRDS(here::here('results', 'march', paste("out.parallel-2.2spStable-3.RDS", sep = "")))
+
+    post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+    post <- as.matrix(post)
+#     
+#from parallel run
+nSamples <- dim(post)[1]
+n_occasions <- 19
+# nyears.burnin <- 8
+nyears.burnin <- 0
+
+#get full posteriors rather than just summary stats
+Ntot_post <- post[,grepl('Ntot', colnames(post)) & !grepl('_f', colnames(post))
+                  & !grepl('_m', colnames(post))] %>% reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1',
+                                                Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', Var2))) %>%
+  transform(Ntot = value) %>% dplyr::select(-c(value, Var2))
+
+phi_post <- post[,grepl('.prob', colnames(post))] %>% reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2',
+                                                Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2))) %>%
+  transform(variable = sub("\\[.*", "", Var2)) %>%
+  transform(variable = gsub('.prob', '', variable))
+
+#### lambda array; want lambda from Ntot == 2000-2018
+## Ntot[9,r] == 2000, so want growth rates starting from t = 9/2000 (t-1) to 10/2001 (t)
+# t == 11/2002; t == 12/2003; t == 13/2004; t == 14/2005; t == 15/2006; t == 16/2007; t == 17/2008;
+# t == 18/2009; t == 19/2010; t == 20/2011; t == 21/2012; t == 22/2013; t == 23/2014; t == 24/2015;
+# t == 25/2016; t == 26/2017; t == 27/2018
+# need to end with the numerator being 2018 (Ntot[27]) and denominator being 2017 (Ntot[26])
+lambda <- array(NA, dim = c(nSamples, 6, n_occasions-1))
+for (r in 1:6) {
+  for (t in (nyears.burnin+2):(n_occasions+nyears.burnin)) {
+  lambda[,r,(t-nyears.burnin-1)] <- Ntot_post[Ntot_post$region == r &
+                               Ntot_post$year == (t), 'Ntot']/
+        Ntot_post[Ntot_post$region == r &
+                    Ntot_post$year == (t-1), 'Ntot']
+  }
+}
+
+# phiP.corr <- phiPM.corr <- phi1.corr <- phi2.corr <- phi3.corr <- phi4.corr <- phi5.corr <- phiB.corr <- psi4.corr <- psiB.corr <- array(NA, dim = c(nSamples, 4, n_occasions-1))
+# 
+# 
+# for (r in 1:4) {
+#   for (t in (1):(n_occasions-1)) { #t = 1 == 2000-2001 rates
+#   phiP.corr[,r,t] <- phi_post[phi_post$variable == 'phiP' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   # phiPM.corr[,r,t] <- phi_post[phi_post$variable == 'phiPM' & phi_post$region == r &
+#   #                              phi_post$year == (t), 'value']
+#   # phi1M.corr[,r,t] <- phi_post[phi_post$variable == 'phi1M' & phi_post$region == r &
+#   #                              phi_post$year == (t), 'value']
+#   phi1.corr[,r,t] <- phi_post[phi_post$variable == 'phi1' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   phi2.corr[,r,t] <- phi_post[phi_post$variable == 'phi2' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   # phi2M.corr[,r,t] <- phi_post[phi_post$variable == 'phi2M' & phi_post$region == r &
+#   #                              phi_post$year == (t), 'value']
+#   phi3.corr[,r,t] <- phi_post[phi_post$variable == 'phi3' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   phi4.corr[,r,t] <- phi_post[phi_post$variable == 'phi4' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   phi5.corr[,r,t] <- phi_post[phi_post$variable == 'phi5' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   phiB.corr[,r,t] <- phi_post[phi_post$variable == 'phiB' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   # psi3.corr[,r,t] <- phi_post[phi_post$variable == 'psi3' & phi_post$region == r &
+#   #                              phi_post$year == (t), 'value']
+#   psi4.corr[,r,t] <- phi_post[phi_post$variable == 'psi4' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+#   # psi5.corr[,r,t] <- phi_post[phi_post$variable == 'psi5' & phi_post$region == r &
+#   #                              phi_post$year == (t), 'value']
+#   psiB.corr[,r,t] <- phi_post[phi_post$variable == 'psiB' & phi_post$region == r &
+#                                phi_post$year == (t), 'value']
+# }
+# }
+# 
+# 
+# ## correlation coefficients
+# #get posterior of correlations by calculating them at each mcmc sample for all years
+# phiP.corr.vals <- phiPM.corr.vals <- phi1.corr.vals <- phi2.corr.vals <- phi3.corr.vals <- 
+#   phi4.corr.vals <- phi5.corr.vals <- phiB.corr.vals <- psi4.corr.vals <- psiB.corr.vals <- array(NA, dim = c(nSamples,4))
+# 
+# for (r in 1:4) {
+# for (i in 1:nSamples) {
+#   phiP.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phiP.corr[i,r,1:(n_occasions-1)])
+#   # phiPM.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phiPM.corr[i,r,1:(n_occasions-1)])
+#   phi1.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi1.corr[i,r,1:(n_occasions-1)])
+#   # phi1M.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi1M.corr[i,r,1:(n_occasions-1)])
+#   phi2.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi2.corr[i,r,1:(n_occasions-1)])
+#   # phi2M.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi2M.corr[i,r,1:(n_occasions-1)])
+#   phi3.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi3.corr[i,r,1:(n_occasions-1)])
+#   phi4.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi4.corr[i,r,1:(n_occasions-1)])
+#   phi5.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phi5.corr[i,r,1:(n_occasions-1)])
+#   phiB.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], phiB.corr[i,r,1:(n_occasions-1)])
+#   # psi3.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], psi3.corr[i,r,1:(n_occasions-1)])
+#   psi4.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], psi4.corr[i,r,1:(n_occasions-1)])
+#   # psi5.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], psi5.corr[i,r,1:(n_occasions-1)])
+#   psiB.corr.vals[i,r] <- cor(lambda[i,r,1:(n_occasions-1)], psiB.corr[i,r,1:(n_occasions-1)])
+# }
+# }
+# 
+# #quantiles of correlation coefficients
+# corr.sum <- data.frame(region = 1:4,
+#                        phiP.med = apply(phiP.corr.vals, 2, median),
+#                             phiP.lower = apply(phiP.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phiP.upper = apply(phiP.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        # phiPM.med = apply(phiPM.corr.vals, 2, median),
+#                        #      phiPM.lower = apply(phiPM.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                        #      phiPM.upper = apply(phiPM.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phi1.med = apply(phi1.corr.vals, 2, median),
+#                             phi1.lower = apply(phi1.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phi1.upper = apply(phi1.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        # phi1M.med = apply(phi1M.corr.vals, 2, median),
+#                        #      phi1M.lower = apply(phi1M.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                        #      phi1M.upper = apply(phi1M.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phi2.med = apply(phi2.corr.vals, 2, median),
+#                             phi2.lower = apply(phi2.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phi2.upper = apply(phi2.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phi3.med = apply(phi3.corr.vals, 2, median),
+#                             phi3.lower = apply(phi3.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phi3.upper = apply(phi3.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phi4.med = apply(phi4.corr.vals, 2, median),
+#                             phi4.lower = apply(phi4.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phi4.upper = apply(phi4.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phi5.med = apply(phi5.corr.vals, 2, median),
+#                             phi5.lower = apply(phi5.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phi5.upper = apply(phi5.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        phiB.med = apply(phiB.corr.vals, 2, median),
+#                             phiB.lower = apply(phiB.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             phiB.upper = apply(phiB.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        psi4.med = apply(psi4.corr.vals, 2, median),
+#                             psi4.lower = apply(psi4.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             psi4.upper = apply(psi4.corr.vals, c(2), function(x) quantile(x, probs = 0.975)),
+#                        psiB.med = apply(psiB.corr.vals, 2, median),
+#                             psiB.lower = apply(psiB.corr.vals, c(2), function(x) quantile(x, probs = 0.025)),
+#                             psiB.upper = apply(psiB.corr.vals, c(2), function(x) quantile(x, probs = 0.975))) %>%
+#   reshape2::melt(id.vars = 'region') %>%
+#   transform(measure = ifelse(grepl('med', variable), 'median',
+#                                    ifelse(grepl('lower', variable), 'lower', 'upper'))) %>%
+#   transform(variable = gsub('.med', '', variable)) %>% transform(variable = gsub('.lower', '', variable)) %>%
+#   transform(variable = gsub('.upper', '', variable)) %>%
+#   transform(value = as.numeric(value)) %>%
+#   reshape2::dcast(region+variable ~ measure, value.var = 'value') %>%
+#   transform(variable = factor(variable, levels = c('phiP', 'phiPM', 'phi1', 'phi1M', 'phi2', 'phi2M', 'phi3',
+#                                                    'phi4', 'phi5', 'phiB', 'psi3', 'psi4', 'psi5', 'psiB'),
+#                               labels = c('Pup', 'Pup (M)', '1', '1 (M)', '2', '2 (M)', '3',
+#                                                    '4', '5', 'B', 'psi3', 'psi4', 'psi5', 'psiB')))
+# 
+# write.csv(corr.sum, file = here::here('results', 'processed', 'corr.sum.csv'), row.names = F)
+
+corr.sum <- read.csv(file = here::here('results', 'processed', 'corr.sum.csv'), header = T)
+
+#plot of just correlation coefficients
+#region colors
+corr_sum_plot <- ggplot(corr.sum %>% filter(!grepl('M', variable)), 
+                        aes(x = variable, y = median, group = factor(region), color = factor(region))) +
+  geom_point(position = position_dodge(0.5)) +
+  geom_errorbar(aes(x = variable, ymin = lower, ymax = upper), position = position_dodge(0.5)) +
+  geom_hline(aes(yintercept = 0), color = 'red', linetype = 'dotted') +
+  xlab('Parameter') + ylab('Correlation coefficient (median & 95% CI)') +
+  plot_theme(panel.border = element_rect(fill = NA), legend.position = 'top') + 
+  scale_color_manual(values = rainbow2[-c(1,4)], name = 'Region')
+
+#for cross-hair plot
+#derive quantiles of demographic rates
+lambda_med <- apply(lambda, c(2,3), median)
+lambda_lower <- apply(lambda, c(2,3), function(x) quantile(x, prob = 0.025, na.rm = T))
+lambda_upper <- apply(lambda, c(2,3), function(x) quantile(x, prob = 0.975, na.rm = T))
+
+lambda_long <- lambda_med %>% reshape2::melt(value.name = 'lambda_med') %>% 
+  dplyr::rename(region = Var1, year = Var2) %>%
+  merge(lambda_lower %>% reshape2::melt(value.name = 'lambda_lower') %>% 
+  dplyr::rename(region = Var1, year = Var2), by = c('year', 'region')) %>%
+  merge(lambda_upper %>% reshape2::melt(value.name = 'lambda_upper') %>% 
+  dplyr::rename(region = Var1, year = Var2), by = c('year', 'region')) %>%
+  transform(region = factor(region, levels = 1:6, labels = c("C.GULF", "E.ALEU", "E.GULF",
+                                                        "W.GULF", "C.ALEU", "W.ALEU")))
+
+corr_plot_vals <- bind_rows(phi_post_sum %>% filter(variable != 'phiNB'), 
+                            psi_post_sum %>% filter(variable %nin% c('psiNB', 'psi3', 'psi5'))) %>%
+  merge(lambda_long, by = c('region', 'year')) 
+
+#make 'labels' df
+# corr_labels <- data.frame(variable = c('Adult B survival', 'Adult NB survival', 
+#                                   'Calf survival', 'YOY survival', 'Fecundity'),
+#                      mean = round(c(phiB.corr.vals[2], phiN.corr.vals[2], phiC.corr.vals[2], 
+#                               phiY.corr.vals[2], psiB.corr.vals[2]),2),
+#                      lower = round(c(phiB.corr.vals[1], phiN.corr.vals[1], phiC.corr.vals[1], 
+#                               phiY.corr.vals[1], psiB.corr.vals[1]),2),
+#                      upper = round(c(phiB.corr.vals[3], phiN.corr.vals[3], phiC.corr.vals[3], 
+#                               phiY.corr.vals[3], psiB.corr.vals[3]),2)) %>%
+#   transform(variable = factor(variable, levels = c('Adult B survival', 'Adult NB survival', 
+#                                                    'Calf survival', 
+#                                                    'YOY survival', 'Fecundity')))
+
+corr_plot <- ggplot(corr_plot_vals %>% filter(!grepl('M', variable)), 
+       aes(med, lambda_med)) +
+  geom_linerange(aes(x = med, ymin = lambda_lower, ymax = lambda_upper), col = 'grey') +
+  geom_linerangeh(aes(y = lambda_med, xmin = lower, xmax = upper), col = 'grey') +
+  geom_point(aes(fill = variable), col = 'black', shape = 21) +
+  geom_smooth(method = 'lm', se = F, col = 'black', size = 0.6) +
+  # geom_text(data = corr_labels, aes(label = paste0('r =', mean, ' ', '(', lower, '-', upper, ')'),
+  #                              group = variable, y = rep(1.14,5),
+  #                              x = c(0.90, 0.83, 0.47, 0.8, 0.19)),
+  #             parse = F, inherit.aes = F, colour = "black", size = 3) +
+  xlab('Parameter value') + ylab('Population growth rate') +
+    facet_wrap(~variable, scales = 'free_x') +
+  plot_theme(panel.border = element_rect(fill = NA), legend.position = 'none') + 
+  # scale_fill_manual(values = rainbow2[-c(1,4)])
+  scale_fill_manual(values=lacroix_palette("PeachPear",type = "continuous", n = 9)) 
+
+```
+
+```{r env covs}
+
+version <- '2.2_env_track_'
+out_1 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-1.RDS")))
+out_2 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-2.RDS")))
+out_3 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-3.RDS")))
+
+post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+post <- as.matrix(post)
+
+post_sum <- data.frame(
+  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+post_sum$variable <- row.names(post_sum)
+
+covs <- post_sum %>% 
+  filter(variable %in% c('b.npgoP', 'b.npgo1', 'b.npgo.psi', 'b.npgoB', 'b.sstP', 'b.sst1', 'b.sst.psi', 'b.sstB')) %>%
+  transform(cov = ifelse(grepl('sst', variable), 'SST', 'NPGO')) %>%
+  transform(rate = ifelse(grepl('P', variable), 'P', ifelse(grepl(1, variable), '1',
+                                                            ifelse(grepl('B', variable), 'B', 'psi')))) %>%
+  transform(rate = factor(rate, levels = c('P', '1', 'B', 'psi')))
+
+ggplot(covs %>% filter(cov == 'NPGO'), aes(rate, med)) +
+  geom_point() +
+  geom_linerange(aes(ymin = lower, ymax = upper)) +
+  geom_hline(aes(yintercept = 0), linetype = 'dotted', color = 'red') +
+  ylab('Logit-scale effect') + xlab('Demographic rate') +
+  facet_grid(~cov) +
+  pres_theme_180() +
+  scale_x_discrete(labels = c('P' = parse(text = TeX('$phi_P$')), 
+                              '1' = parse(text = TeX('$phi_{1,2}$')),
+                              'B' = parse(text = TeX('$phi_B$')), 
+                              'psi' = parse(text = TeX('$psi$'))))
+
+```
+
+```{r base projection prep}
+
+version <- '2.2'
+out_1 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-1.RDS")))
+out_2 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-2.RDS")))
+out_3 <- readRDS(here::here('results', 'march', paste0("out.parallel-", version, "spStable-3.RDS")))
+
+post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+post <- as.matrix(post)
+
+post_sum <- data.frame(
+  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+post_sum$variable <- row.names(post_sum)
+
+all_pars <- colnames(post)
+eps_pars <- all_pars[which(grepl('eps', all_pars))]
+
+nSims <- 20
+nSamples <- dim(post)[1]
+nyears.proj <- 100
+G_f <- 8
+G_m <- 7
+nSamp <- 2000
+n_r <- 6
+nyears.burnin <- 0
+n_occasions <- 19
+
+Ntot_post <- post[(nSamples-nSamp+1):nSamples,grepl('Ntot', colnames(post)) & !grepl('_f', colnames(post)) 
+                  & !grepl('_m', colnames(post))] %>% 
+  reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', Var2))) %>%
+  transform(Ntot = value) %>% dplyr::select(-c(value, Var2))
+
+phi_post <- post[(nSamples-nSamp+1):nSamples,grepl('.prob', colnames(post))] %>% reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2',
+                                                Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2))) %>%
+  transform(variable = sub("\\[.*", "", Var2)) %>%
+  transform(variable = gsub('.prob', '', variable))
+
+mu_post <- post[(nSamples-nSamp+1):nSamples,grepl('mu.', colnames(post))] %>% reshape2::melt() 
+
+reg_post <- post[(nSamples-nSamp+1):nSamples,grepl('reg.', colnames(post))] %>% reshape2::melt() %>%
+    transform(region = as.numeric(gsub('.+\\[([0-9]+)\\].*$', '\\1', Var2))) %>%
+  transform(variable = sub("\\[.*", "", Var2)) 
+
+#get male and female populations; dim = c(age_class 1:8, t 1:27, r 1:6)
+N_f_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_f', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
+
+N_m_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_m', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
+
+
+#rebuild in array format
+N_f <- array(NA, dim = c(nSamp, G_f, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+  for (a in 1:G_f) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        N_f[,a,t,r] <- N_f_post[N_f_post$age == a & N_f_post$year == t & N_f_post$region == r, 'value']
+    }
+  }
+}
+
+N_m <- array(NA, dim = c(nSamp, G_m, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+  for (a in 1:G_m) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        N_m[,a,t,r] <- N_m_post[N_m_post$age == a & N_m_post$year == t & N_m_post$region == r, 'value']
+    }
+  }
+}
+
+Ntot_est <- array(NA, dim = c(nSamp, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        Ntot_est[,t,r] <- Ntot_post[Ntot_post$year == t & Ntot_post$region == r, 'Ntot']
+  }
+}
+
+phiP_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phiP_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phiP', 'value']
+    }
+}
+phiPM_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phiPM_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phiPM', 'value']
+    }
+}
+phi1_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi1_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi1', 'value']
+    }
+}
+phi1M_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi1M_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi1M', 'value']
+    }
+}
+phi2_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi2_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi2', 'value']
+    }
+}
+phi2M_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi2M_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi2M', 'value']
+    }
+}
+phi3_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi3_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi3', 'value']
+    }
+}
+phi3M_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi3M_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi3M', 'value']
+    }
+}
+phi4_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi4_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi4', 'value']
+    }
+}
+phi4M_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi4M_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi4M', 'value']
+    }
+}
+phi5_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi5_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi5', 'value']
+    }
+}
+phi5M_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phi5M_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phi5M', 'value']
+    }
+}
+phiB_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phiB_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phiB', 'value']
+    }
+}
+phiNB_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phiNB_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phiNB', 'value']
+    }
+}
+phiBM_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        phiBM_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'phiBM', 'value']
+    }
+}
+psi3_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        psi3_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'psi3', 'value']
+    }
+}
+psi4_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        psi4_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'psi4', 'value']
+    }
+}
+psi5_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        psi5_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'psi5', 'value']
+    }
+}
+psiB_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        psiB_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'psiB', 'value']
+    }
+}
+psiNB_arr <- array(NA, dim = c(nSamp, (n_occasions-1), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions-1)) {
+        psiNB_arr[,t,r] <- phi_post[phi_post$year == t & phi_post$region == r & phi_post$variable == 'psiNB', 'value']
+    }
+  }
+
+```
+
+```{r base proj}
+
+#storage for sim/region loop
+Ntot.sim <- array(NA, dim = c(nSamp, n_occasions+nyears.burnin+nyears.proj, nSims, n_r))
+p.ext.sim <- p.ad.ext.sim <- p.neg.sim <- lambda.mean.sim <- data.frame()
+p.ext <- p.ad.ext <- p.neg <- array(NA, dim = c(nSims, n_r))
+lambda.mean <- lambda.upper <- lambda.lower <- array(NA, dim = c(nSims, n_r))
+
+picks <- sample(1:(n_occasions-1), nyears.proj, replace = T)
+
+for (sim in 1:nSims) {
+  for (r in 1:n_r) {
+   
+    #temp storage for population model objects; need a row for each of nSamples and columns for each projection year
+    N_4B <- N_5B <- N_6B <- N_6NB <- N_BB <- N_BNB <- array(NA, dim = c(nSamp, nyears.proj)) 
+    Ntot_f_proj <- Ntot_m_proj <- array(NA, dim = c(nSamp, nyears.proj))
+    N_NBNB <- N_NBB <- N_B <- N_NB <- N_A1 <- N_Aplus <- array(NA, dim = c(nSamp, nyears.proj))
+    
+    #total population size for data period + projections (Ntot) and just projections (Ntot_proj)
+    Ntot <- Ntot_f <- Ntot_m <- array(NA, dim = c(nSamp, n_occasions+nyears.burnin+nyears.proj)) 
+    Ntot_proj <- array(NA, dim = c(nSamp, nyears.proj))
+    N_f_proj <- array(NA, dim = c(nSamp, G_f, nyears.proj))
+    N_m_proj <- array(NA, dim = c(nSamp, G_m, nyears.proj))
+    
+    #demographic rates
+    phiP.prob.proj <- phi1.prob.proj <- phi2.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phi3.prob.proj <- phi4.prob.proj <- phi5.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phiB.prob.proj <- phiNB.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    
+    psi3.prob.proj <- psi4.prob.proj <- psi5.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    psiB.prob.proj <- psiNB.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+
+    phiPM.prob.proj <- phi1M.prob.proj <- phi2M.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phi3M.prob.proj <- phi4M.prob.proj <- phi5M.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phiBM.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+
+    #grab last year from data period to initialize
+    N_B[,1] <- N_f[,7,dim(N_f)[3],r]
+    N_NB[,1] <- N_f[,8,dim(N_f)[3],r]
+    N_A1[,1] <- N_m[,6,dim(N_f)[3],r]
+    N_Aplus[,1] <- N_m[,7,dim(N_f)[3],r]
+    
+    Ntot[,1:(n_occasions+nyears.burnin)] <- Ntot_est[,1:(n_occasions+nyears.burnin),r] #fills up to Ntot[,26]
+    Ntot_proj[,1] <- Ntot_est[,dim(Ntot_est)[2],r] #grab 19th year
+    N_f_proj[,,1] <- N_f[,,dim(N_f)[3],r] # populate with last year from data period
+    N_m_proj[,,1] <- N_m[,,dim(N_m)[3],r]
+
+   ## projection; sigma == sd, sigma^2 == variance, 1/variance == precision
+  for (t in (1:(nyears.proj-1))) {
+    year_pick <- picks[t]
+    
+    phiP.prob.proj[,t] <- phiP_arr[,year_pick,r]
+    phiPM.prob.proj[,t] <- phiPM_arr[,year_pick,r]
+    phi1.prob.proj[,t] <- phi1_arr[,year_pick,r]
+    phi1M.prob.proj[,t] <- phi1M_arr[,year_pick,r]
+    phi2.prob.proj[,t] <- phi2_arr[,year_pick,r]
+    phi2M.prob.proj[,t] <- phi2M_arr[,year_pick,r]
+    phi3.prob.proj[,t] <- phi3_arr[,year_pick,r]
+    phi3M.prob.proj[,t] <- phi3M_arr[,year_pick,r]
+    phi4.prob.proj[,t] <- phi4_arr[,year_pick,r]
+    phi4M.prob.proj[,t] <- phi4M_arr[,year_pick,r]
+    phi5.prob.proj[,t] <- phi5_arr[,year_pick,r]
+    phi5M.prob.proj[,t] <- phi5M_arr[,year_pick,r]
+    phiB.prob.proj[,t] <- phiB_arr[,year_pick,r]
+    phiNB.prob.proj[,t] <- phiNB_arr[,year_pick,r]
+    phiBM.prob.proj[,t] <- phiBM_arr[,year_pick,r]
+    psi3.prob.proj[,t] <- psi3_arr[,year_pick,r]
+    psi4.prob.proj[,t] <- psi4_arr[,year_pick,r]
+    psi5.prob.proj[,t] <- psi5_arr[,year_pick,r]
+    psiB.prob.proj[,t] <- psiB_arr[,year_pick,r]
+    psiNB.prob.proj[,t] <- psiNB_arr[,year_pick,r]
+    
+    ###FEMALES
+    N_f_proj[,2,t+1] <- rbinom(nSamp, N_f_proj[,1,t], phiP.prob.proj[,t]) #yearlings
+    N_f_proj[,3,t+1] <- rbinom(nSamp, N_f_proj[,2,t], phi1.prob.proj[,t]) #2yos
+    N_f_proj[,4,t+1] <- rbinom(nSamp, N_f_proj[,3,t], phi2.prob.proj[,t]) #3yos
+    N_f_proj[,5,t+1] <- rbinom(nSamp, N_f_proj[,4,t], phi3.prob.proj[,t]*(1-psi3.prob.proj[,t])) #4yo PB
+    N_f_proj[,6,t+1] <- rbinom(nSamp, N_f_proj[,5,t], phi4.prob.proj[,t]*(1-psi4.prob.proj[,t])) #5yo PB 
+
+    N_4B[,t+1] <- rbinom(nSamp, N_f_proj[,4,t], phi3.prob.proj[,t]*psi3.prob.proj[,t]) #4yo breeders 
+    N_5B[,t+1] <- rbinom(nSamp, N_f_proj[,5,t], phi4.prob.proj[,t]*psi4.prob.proj[,t]) #5yo first-B  
+
+    N_6B[,t+1] <- rbinom(nSamp, N_f_proj[,6,t], phi5.prob.proj[,t]*psi5.prob.proj[,t]) #6yo first-B 
+    N_6NB[,t+1] <- rbinom(nSamp, N_f_proj[,6,t], phi5.prob.proj[,t]*(1-psi5.prob.proj[,t])) #6yo NB that was PB at 5 
+
+    ## Plus groups
+    #breeders
+    N_BB[,t+1] <- rbinom(nSamp, N_B[,t], phiB.prob.proj[,t]*psiB.prob.proj[,t]) # plus grp B given B (#6)
+    N_BNB[,t+1] <- rbinom(nSamp, N_NB[,t], phiNB.prob.proj[,t]*psiNB.prob.proj[,t]) # plus grp B given NB (#8)
+
+    #non breeders
+    N_NBNB[,t+1] <- rbinom(nSamp, N_NB[,t], phiNB.prob.proj[,t]*(1-psiNB.prob.proj[,t])) # plus grp NB given NB (#9)
+    N_NBB[,t+1] <- rbinom(nSamp, N_B[,t], phiB.prob.proj[,t]*(1-psiB.prob.proj[,t])) # plus grp NB given B (#7)
+
+    #total breeders and non-breeders
+    N_B[,t+1] <- N_4B[,t+1]+N_5B[,t+1]+N_6B[,t+1]+N_BB[,t+1]+N_BNB[,t+1] # total breeders
+    N_NB[,t+1] <- N_6NB[,t+1]+N_NBB[,t+1]+N_NBNB[,t+1] # total breeders
+
+    N_f_proj[,7,t+1] <- N_B[,t+1]   #B
+    N_f_proj[,8,t+1] <- N_NB[,t+1]  #NB
+    N_f_proj[,1,t+1] <- round(N_B[,t+1]/2) #pups 
+
+     Ntot_f_proj[,t+1] <- rowSums(N_f_proj[1:nSamp,1:8,t+1])
+
+    ###MALES
+    N_m_proj[,1,t+1] <- round(N_B[,t+1]/2) #pups
+    N_m_proj[,2,t+1] <- rbinom(nSamp, N_m_proj[,1,t], phiPM.prob.proj[,t]) #yearlings
+    N_m_proj[,3,t+1] <- rbinom(nSamp, N_m_proj[,2,t], phi1M.prob.proj[,t]) #2yos
+    N_m_proj[,4,t+1] <- rbinom(nSamp, N_m_proj[,3,t], phi2M.prob.proj[,t]) #3yos
+    N_m_proj[,5,t+1] <- rbinom(nSamp, N_m_proj[,4,t], phi3M.prob.proj[,t]) #4yos
+    N_m_proj[,6,t+1] <- rbinom(nSamp, N_m_proj[,5,t], phi4M.prob.proj[,t]) #5yos
+    N_A1[,t+1] <- rbinom(nSamp, N_m_proj[,6,t], phi5M.prob.proj[,t]) #new adults from 5yos
+    N_Aplus[,t+1] <- rbinom(nSamp, N_m_proj[,7,t], phiBM.prob.proj[,t]) #repeat adults 7+
+
+    N_m_proj[,7,t+1] <- N_A1[,t+1] + N_Aplus[,t+1]
+
+    Ntot_m_proj[,t+1] <- rowSums(N_m_proj[1:nSamp,1:7,t+1])
+    Ntot_proj[,t+1] <- Ntot_f_proj[,t+1] + Ntot_m_proj[,t+1]
+
+  } #t
+
+#fill space in Ntot with Ntot_proj projection years, essentially bind_cols()
+Ntot[,((n_occasions+nyears.burnin+1):(n_occasions+nyears.burnin+nyears.proj))] <- Ntot_proj[,]
+
+###### summarize objects over mcmc samples
+
+#growth rate over the whole study period
+lambda.yr.mean <- lambda.yr.lower <- lambda.yr.upper <- numeric(length = length(2:(n_occasions+nyears.burnin+nyears.proj)))
+for (t in 2:(n_occasions+nyears.burnin+nyears.proj)) {
+  #mean and quantiles per year across mcmc samples; leave na.rm for zero size pops in mcmc samples
+  lambda.yr.mean[t] <- mean(Ntot[,t]/(Ntot[,t-1]), na.rm = T)
+  lambda.yr.lower[t] <- quantile(Ntot[,t]/(Ntot[,t-1]), probs = 0.025, na.rm = T, names = F)
+  lambda.yr.upper[t] <- quantile(Ntot[,t]/(Ntot[,t-1]), probs = 0.975, na.rm = T, names = F)
+} #t lambda
+
+#### derive and store values for each simulation
+
+#geometric mean, and quantiles(?)
+lambda.mean[sim,r] <- exp(mean(log(lambda.yr.mean[which(lambda.yr.mean>0)])))
+lambda.lower[sim,r] <- exp(mean(log(lambda.yr.lower[which(lambda.yr.lower>0)])))
+lambda.upper[sim,r] <- exp(mean(log(lambda.yr.upper[which(lambda.yr.upper>0)])))
+
+#prob of having less than 2 individuals and less than 1 breeding age female at end
+p.ext[sim,r] <- mean(Ntot[,(n_occasions+nyears.burnin+nyears.proj)]<2)
+p.ad.ext[sim,r] <- mean(N_f_proj[,7,nyears.proj]<1)
+
+#probability that have fewer individuals at end than start
+p.neg[sim,r] <- mean(Ntot[,(n_occasions+nyears.burnin+nyears.proj)] < Ntot[,1])
+
+#population size at end of projection
+# end.size.sim[sim,1:3] <- quantile(Ntot[,(nyears.gap+nyears.ch+proj)], 
+#                                 probs = c(0.025, 0.5, 0.975), names = F)
+
+#Ntot
+Ntot.sim[1:nSamp,,sim,r] <- as.matrix(Ntot)
+
+# lambda.mean.sim <- bind_rows(lambda.mean, lambda.mean.sim)
+# p.neg.sim <- bind_rows(p.neg, p.neg.sim)
+# p.ad.ext.sim <- bind_rows(p.ad.ext, p.ad.ext.sim)
+# p.neg.sim <- bind_rows(p.neg, p.neg.sim)
+
+} #sim 
+} #region
+
+## save objects
+saveRDS(Ntot.sim, file = here::here('results', 'projections', 'Ntot.rds'))
+saveRDS(lambda.mean, file = here::here('results', 'projections', 'lambda.rds'))
+saveRDS(p.ext, file = here::here('results', 'projections', 'p.ext.rds'))
+saveRDS(p.ad.ext, file = here::here('results', 'projections', 'p.ad.ext.rds'))
+saveRDS(p.neg, file = here::here('results', 'projections', 'p.neg.rds'))
+
+#want mean and CI for each time step and region
+Ntot_mean <- apply(Ntot.sim, c(4,2), median)
+Ntot_q2.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.025))
+Ntot_q97.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.975))
+
+#Ntot figures
+N_mean_long_sim <- Ntot_mean %>%
+  reshape2::melt(value.name = 'mean') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_low_long_sim <- Ntot_q2.5 %>%
+  reshape2::melt(value.name = 'lower') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_high_long_sim <- Ntot_q97.5 %>%
+  reshape2::melt(value.name = 'upper') %>%
+  dplyr::rename(reg = Var1, year = Var2) 
+
+N_vals_sim <- N_mean_long_sim %>%
+  merge(N_low_long_sim, by = c('reg', 'year')) %>%
+  merge(N_high_long_sim, by = c('reg', 'year')) %>%
+  arrange(reg, year) %>%
+  transform(reg = factor(reg, levels = 1:n_r,
+                            labels = c("C.GULF", "E.ALEU", "E.GULF",
+                                       "W.GULF", "C.ALEU", "W.ALEU")))
+
+
+#Ntot; mean trajectories for each region
+ggplot(N_vals_sim,
+       aes(year, mean, group = factor(reg), col = factor(reg))) +
+  geom_line() +
+  geom_ribbon(aes(year, ymin = lower, ymax = upper, col = factor(reg), fill = factor(reg), alpha = 0.5), 
+              show.legend = F) +
+  xlab('') + ylab('Population size') +
+  facet_wrap(~reg, scales = 'free_y') +
+  plot_theme(legend.position = 'top') +
+    scale_x_continuous(limits = c(1,n_occasions+nyears.burnin+nyears.proj),
+                     breaks = seq(2, n_occasions+nyears.burnin+nyears.proj, by = 10),
+                     labels = seq(2000, (2000+n_occasions+nyears.burnin+nyears.proj), by = 10)) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)])
+
+#####posterior summaries; boxplots of posterior means
+lambda <- lambda.mean %>% reshape2::melt() %>% dplyr::rename(sim = Var1, reg = Var2)
+a <- ggplot(lambda, aes(y=value, col = factor(reg), group = factor(reg))) +
+  geom_boxplot(width = 0.5) +
+  xlab('') + ylab('Population growth rate') +
+  theme_classic() +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+# p.ext.sim[1:nSamp, 1:n_r]
+p.ext <- p.ext %>% reshape2::melt() %>% dplyr::rename(sim = Var1, reg = Var2)
+b <- ggplot(p.ext, aes(y=value, group = factor(reg), color = factor(reg))) +
+  geom_boxplot(width = 0.5) +
+  xlab('') + ylab('Probability of extinction') +
+  theme_classic() +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+p.neg <- p.neg %>% reshape2::melt() %>% dplyr::rename(sim = Var1, reg = Var2)
+c <- ggplot(p.neg, aes(y=value, group = factor(reg), color = factor(reg))) +
+  geom_boxplot(width = 0.5) +
+  xlab('') + ylab('Probability of negative trend') +
+  theme_classic() +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+
+```
+
+
+
+```{r env projection prep}
+
+version <- '2.2_env_track_'
+out_1 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-1.RDS")))
+out_2 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-2.RDS")))
+out_3 <- readRDS(here::here('results', 'best', paste0("out.parallel-", version, "spStable-3.RDS")))
+
+post <- list(`out_1`, `out_2`, `out_3`) %>% as.mcmc.list()
+post <- as.matrix(post)
+
+post_sum <- data.frame(
+  med = apply(post, 2, function(x) quantile(x, probs = 0.5, na.rm = T, names = F)),
+  lower = apply(post, 2, function(x) quantile(x, probs = 0.025, na.rm = T, names = F)),
+  upper = apply(post, 2, function(x) quantile(x, probs = 0.975, na.rm = T, names = F)))
+post_sum$variable <- row.names(post_sum)
+
+all_pars <- colnames(post)
+eps_pars <- all_pars[which(grepl('eps', all_pars))]
+
+nSims <- 10
+nSamples <- dim(post)[1]
+nyears.proj <- 100
+G_f <- 8
+G_m <- 7
+nSamp <- 2500
+n_r <- 6
+nyears.burnin <- 0
+n_occasions <- 19
+
+Ntot_post <- post[(nSamples-nSamp+1):nSamples,grepl('Ntot', colnames(post)) & !grepl('_f', colnames(post)) 
+                  & !grepl('_m', colnames(post))] %>% 
+  reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', Var2))) %>%
+  transform(Ntot = value) %>% dplyr::select(-c(value, Var2))
+
+phi_post <- post[(nSamples-nSamp+1):nSamples,grepl('.prob', colnames(post))] %>% reshape2::melt() %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2',
+                                                Var2)))) %>%
+  transform(region = as.numeric(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2))) %>%
+  transform(variable = sub("\\[.*", "", Var2)) %>%
+  transform(variable = gsub('.prob', '', variable))
+
+mu_post <- post[(nSamples-nSamp+1):nSamples,grepl('mu.', colnames(post))] %>% reshape2::melt() 
+
+reg_post <- post[(nSamples-nSamp+1):nSamples,grepl('reg.', colnames(post))] %>% reshape2::melt() %>%
+    transform(region = as.numeric(gsub('.+\\[([0-9]+)\\].*$', '\\1', Var2))) %>%
+  transform(variable = sub("\\[.*", "", Var2)) 
+
+#get male and female populations; dim = c(age_class 1:8, t 1:27, r 1:6)
+N_f_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_f', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
+
+N_m_post <- post[(nSamples-nSamp+1):nSamples,grepl('N_m', colnames(post))] %>% reshape2::melt() %>%
+  transform(Var2 = as.character(Var2)) %>%
+  transform(age = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+), ([0-9]+)\\].*$', '\\3', Var2))))
+
+
+#rebuild in array format
+N_f <- array(NA, dim = c(nSamp, G_f, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+  for (a in 1:G_f) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        N_f[,a,t,r] <- N_f_post[N_f_post$age == a & N_f_post$year == t & N_f_post$region == r, 'value']
+    }
+  }
+}
+
+N_m <- array(NA, dim = c(nSamp, G_m, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+  for (a in 1:G_m) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        N_m[,a,t,r] <- N_m_post[N_m_post$age == a & N_m_post$year == t & N_m_post$region == r, 'value']
+    }
+  }
+}
+
+Ntot_est <- array(NA, dim = c(nSamp, (n_occasions+nyears.burnin), n_r))
+for (r in 1:n_r) {
+    for (t in 1:(n_occasions+nyears.burnin)) {
+        Ntot_est[,t,r] <- Ntot_post[Ntot_post$year == t & Ntot_post$region == r, 'Ntot']
+  }
+}
+
+eps_post <- post[(nSamples-nSamp+1):nSamples, eps_pars[-c(1:19)]] %>% #not great subsetting
+  reshape2::melt() %>%
+  transform(region = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\1', Var2)))) %>%
+  transform(year = as.numeric(as.character(gsub('.+\\[([0-9]+), ([0-9]+)\\].*$', '\\2', Var2)))) %>%
+  transform(variable = ifelse(grepl('epsPB', Var2), 'epsPB', 
+                              ifelse(grepl('epsP', Var2), 'epsP',
+                                     ifelse(grepl('eps1', Var2), 'eps1',
+                                            ifelse(grepl('eps2', Var2), 'eps2', 
+                                                   ifelse(grepl('epsB', Var2), 'epsB', 
+                                                          ifelse(grepl('eps.psiPB', Var2), 'eps.psiPB', 
+                                                                 ifelse(grepl('eps.psiB', Var2), 'eps.psiB', '100'))))))))
+
+npgo_post <- post[(nSamples-nSamp+1):nSamples,grepl('npgo', colnames(post))] %>%
+  reshape2::melt() 
+
+sst_post <- post[(nSamples-nSamp+1):nSamples,grepl('sst', colnames(post))] %>%
+  reshape2::melt() 
+
+#years to sample
+picks <- array(NA, dim = c(nSims, nyears.proj))  
+for (n in 1:nSims) {
+picks[n,] <- sample(1:(n_occasions-1), nyears.proj, replace = T)
+}
+
+#environmental scenarios
+npgo_sd_obs <- sd(npgo_dat)
+npgo_mean_obs <- mean(npgo_dat)
+
+sst_sd_obs <- sd(sst_dat)
+sst_mean_obs <- mean(sst_dat)
+
+# pr <- 0.25
+# pr_big <- 0.5
+
+pr <- 0.75
+pr_big <- 0.99
+
+#1: mean and sd's equivalent to historical observation
+npgo_preds1 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds1 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds1[n,] <- rnorm(nyears.proj, npgo_mean_obs, npgo_sd_obs)
+  sst_preds1[n,] <- scale(rnorm(nyears.proj, sst_mean_obs, sst_sd_obs), scale = F)
+}
+
+#2: mean same and sd's 25% smaller than historical observation
+npgo_preds2 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds2 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds2[n,] <- rnorm(nyears.proj, npgo_mean_obs, npgo_sd_obs-npgo_sd_obs*pr)
+  sst_preds2[n,] <- scale(rnorm(nyears.proj, sst_mean_obs, sst_sd_obs-sst_sd_obs*pr), scale = F)
+}
+
+#3: mean same and sd's 25% larger than historical observation
+npgo_preds3 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds3 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds3[n,] <- rnorm(nyears.proj, npgo_mean_obs, npgo_sd_obs+npgo_sd_obs*pr)
+  sst_preds3[n,] <- scale(rnorm(nyears.proj, sst_mean_obs, sst_sd_obs+sst_sd_obs*pr), scale = F)
+}
+
+#4: mean lower and sd's 25% smaller than historical observation
+npgo_preds4 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds4 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds4[n,] <- rnorm(nyears.proj, npgo_mean_obs-npgo_mean_obs*pr, npgo_sd_obs-npgo_sd_obs*pr)
+  sst_preds4[n,] <- scale(rnorm(nyears.proj, sst_mean_obs-sst_mean_obs*pr, sst_sd_obs-sst_sd_obs*pr), scale = F)
+}
+
+#5: mean lower and sd's 25% larger than historical observation
+npgo_preds5 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds5 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds5[n,] <- rnorm(nyears.proj, npgo_mean_obs-npgo_mean_obs*pr, npgo_sd_obs+npgo_sd_obs*pr)
+  sst_preds5[n,] <- scale(rnorm(nyears.proj, sst_mean_obs-sst_mean_obs*pr, sst_sd_obs+sst_sd_obs*pr), scale = F)
+}
+
+#6: mean higher and sd's 25% smaller than historical observation
+npgo_preds6 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds6 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds6[n,] <- rnorm(nyears.proj, npgo_mean_obs+npgo_mean_obs*pr, npgo_sd_obs-npgo_sd_obs*pr)
+  sst_preds6[n,] <- scale(rnorm(nyears.proj, sst_mean_obs+sst_mean_obs*pr, sst_sd_obs-sst_sd_obs*pr), scale = F)
+}
+
+#7: mean higher and sd's 25% larger than historical observation
+npgo_preds7 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds7 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds7[n,] <- rnorm(nyears.proj, npgo_mean_obs+npgo_mean_obs*pr, npgo_sd_obs+npgo_sd_obs*pr)
+  sst_preds7[n,] <- scale(rnorm(nyears.proj, sst_mean_obs+sst_mean_obs*pr, sst_sd_obs+sst_sd_obs*pr), scale = F)
+}
+
+
+#8: lower mean and sd's historical 
+npgo_preds8 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds8 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds8[n,] <- rnorm(nyears.proj, npgo_mean_obs-npgo_mean_obs*pr, npgo_sd_obs)
+  sst_preds8[n,] <- scale(rnorm(nyears.proj, sst_mean_obs-sst_mean_obs*pr, sst_sd_obs), scale = F)
+}
+
+#9: higher mean and sd's historical
+npgo_preds9 <- array(NA, dim = c(nSims, nyears.proj))
+sst_preds9 <- array(NA, dim = c(nSims, nyears.proj))
+for (n in 1:nSims) {
+  npgo_preds9[n,] <- rnorm(nyears.proj, npgo_mean_obs+npgo_mean_obs*pr, npgo_sd_obs)
+  sst_preds9[n,] <- scale(rnorm(nyears.proj, sst_mean_obs+sst_mean_obs*pr, sst_sd_obs), scale = F)
+}
+
+scenarios <- c(1:9)
+
+
+```
+
+```{r env proj -- npgo and sst scenarios}
+
+Ntot.sim.cov <- lambda.mean.sim.cov <- p.ext.sim.cov <- p.ad.ext.sim.cov <- p.neg.sim.cov <- data.frame()
+
+#storage for sim/region loop
+Ntot.sim <- array(NA, dim = c(nSamp, n_occasions+nyears.burnin+nyears.proj, nSims, n_r))
+p.ext.sim <- p.ad.ext.sim <- p.neg.sim <- array(NA, dim = c(nSims, n_r))
+lambda.mean.sim <- lambda.upper.sim <- lambda.lower.sim <- array(NA, dim = c(nSims, n_r))
+
+t.start <- Sys.time() # start clock for whole process
+
+for (sc in scenarios) {
+  for (r in 1:n_r) {
+   for (sim in 1:nSims) {
+
+    #temp storage for population model objects; need a row for each of nSamples and columns for each projection year
+    N_4B <- N_5B <- N_6B <- N_6NB <- N_BB <- N_BNB <- array(NA, dim = c(nSamp, nyears.proj)) 
+    Ntot_f_proj <- Ntot_m_proj <- array(NA, dim = c(nSamp, nyears.proj))
+    N_NBNB <- N_NBB <- N_B <- N_NB <- N_A1 <- N_Aplus <- array(NA, dim = c(nSamp, nyears.proj))
+    
+    #total population size for data period + projections (Ntot) and just projections (Ntot_proj)
+    Ntot <- Ntot_f <- Ntot_m <- array(NA, dim = c(nSamp, n_occasions+nyears.burnin+nyears.proj)) 
+    Ntot_proj <- array(NA, dim = c(nSamp, nyears.proj))
+    N_f_proj <- array(NA, dim = c(nSamp, G_f, nyears.proj))
+    N_m_proj <- array(NA, dim = c(nSamp, G_m, nyears.proj))
+    
+    #demographic rates
+    phiP.prob.proj <- phi1.prob.proj <- phi2.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phi3.prob.proj <- phi4.prob.proj <- phi5.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phiB.prob.proj <- phiNB.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    
+    psi3.prob.proj <- psi4.prob.proj <- psi5.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    psiB.prob.proj <- psiNB.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+
+    phiPM.prob.proj <- phi1M.prob.proj <- phi2M.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phi3M.prob.proj <- phi4M.prob.proj <- phi5M.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+    phiBM.prob.proj <- array(NA, dim = c(nSamp, nyears.proj-1))
+
+    #grab last year from data period to initialize
+    N_B[,1] <- N_f[,7,dim(N_f)[3],r]
+    N_NB[,1] <- N_f[,8,dim(N_f)[3],r]
+    N_A1[,1] <- N_m[,6,dim(N_f)[3],r]
+    N_Aplus[,1] <- N_m[,7,dim(N_f)[3],r]
+    
+    Ntot[,1:(n_occasions+nyears.burnin)] <- Ntot_est[,1:(n_occasions+nyears.burnin),r] #fills up to Ntot[,26]
+    Ntot_proj[,1] <- Ntot_est[,dim(Ntot_est)[2],r] #grab 19th year
+    N_f_proj[,,1] <- N_f[,,dim(N_f)[3],r] # populate with last year from data period
+    N_m_proj[,,1] <- N_m[,,dim(N_m)[3],r]
+
+   ## projection; sigma == sd, sigma^2 == variance, 1/variance == precision
+    for (t in 1:(nyears.proj-1)) {
+ 
+      if (sc == scenarios[1]) {npgo <- npgo_preds1; sst <- sst_preds1}
+      if (sc == scenarios[2]) {npgo <- npgo_preds2; sst <- sst_preds2}
+      if (sc == scenarios[3]) {npgo <- npgo_preds3; sst <- sst_preds3}
+      if (sc == scenarios[4]) {npgo <- npgo_preds4; sst <- sst_preds4}
+      if (sc == scenarios[5]) {npgo <- npgo_preds5; sst <- sst_preds5}
+      if (sc == scenarios[6]) {npgo <- npgo_preds6; sst <- sst_preds6}
+      if (sc == scenarios[7]) {npgo <- npgo_preds7; sst <- sst_preds7}
+      if (sc == scenarios[8]) {npgo <- npgo_preds8; sst <- sst_preds8}
+        
+    year_pick <- picks[sim,t]
+    
+    #pups
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.P')
+    eps.temp <- eps_post %>% filter(variable == 'epsP' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.regP' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgoP')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sstP')
+    phiP.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                              npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.PM')
+    eps.temp <- eps_post %>% filter(variable == 'epsP' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.regP' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgoP')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sstP')
+    phiPM.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                                 npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    #yearlings
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.1')
+    eps.temp <- eps_post %>% filter(variable == 'eps1' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg1' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo1')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst1')
+    phi1.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                              npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.1M')
+    eps.temp <- eps_post %>% filter(variable == 'eps1' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg1' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo1')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst1')
+    phi1M.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                             npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    #year2
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.2')
+    eps.temp <- eps_post %>% filter(variable == 'eps2' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg2' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo1')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst1')
+    phi2.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                             npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.2M')
+    eps.temp <- eps_post %>% filter(variable == 'eps2' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg2' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo1')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst1')
+    phi2M.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                            npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    #NB
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.NB')
+    phiNB.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'])))
+    
+    #psi3
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.psi3')
+    reg.temp <- reg_post %>% filter(variable == 'b.reg.psi3' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo.psi')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst.psi')
+      
+    psi3.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + reg.temp[,'value'] +
+                                npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    #psi5
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.psi5')
+    reg.temp <- reg_post %>% filter(variable == 'b.reg.psi5' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo.psi')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst.psi')
+      
+    psi5.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + reg.temp[,'value'] +
+                               npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    #psiNB
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.psiNB')
+    reg.temp <- reg_post %>% filter(variable == 'b.reg.psiNB' & region == r)
+    psiNB.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + reg.temp[,'value'])))
+    
+    if (r < 5) {reg = 1} 
+    if (r > 4) {reg = 2}
+    #3-5; east-west regional effect, singular eastern random effect
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.3')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi3.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.3M')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi3M.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    #4
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.4')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi4.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.4M')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi4M.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    #5
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.5')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi5.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.5M')
+    eps.temp <- eps_post %>% filter(variable == 'epsPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regPB' & region == reg)
+    phi5M.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+    
+    #B & BM
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.B')
+    eps.temp <- eps_post %>% filter(variable == 'epsB' & year == year_pick & region == r)
+    reg.temp <- reg_post %>% filter(variable == 'b.regB' & region == reg)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgoB')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sstB')
+    phiB.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value']
+                                   + npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+    
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.BM')
+    eps.temp <- eps_post %>% filter(variable == 'epsB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.regB' & region == reg)
+    phiBM.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'])))
+      
+    #psi4
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.psi4')
+    eps.temp <- eps_post %>% filter(variable == 'eps.psiPB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg.psi4' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo.psi')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst.psi')
+      
+    psi4.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                                    npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+
+    #psiB
+    mu.temp <- mu_post %>% filter(Var2 == 'mu.psiB')
+    eps.temp <- eps_post %>% filter(variable == 'eps.psiB' & year == year_pick & region == reg)
+    reg.temp <- reg_post %>% filter(variable == 'b.reg.psiB' & region == r)
+    npgo.temp <- npgo_post %>% filter(Var2 == 'b.npgo.psi')
+    sst.temp <- sst_post %>% filter(Var2 == 'b.sst.psi')
+      
+    psiB.prob.proj[,t] <- 1/(1+exp(-(mu.temp[, 'value'] + eps.temp[,'value'] + reg.temp[,'value'] +
+                                    npgo.temp[,'value']*npgo[sim,t] + sst.temp[,'value']*sst[sim,t])))
+
+    ###FEMALES
+    N_f_proj[,2,t+1] <- rbinom(nSamp, N_f_proj[,1,t], phiP.prob.proj[,t]) #yearlings
+    N_f_proj[,3,t+1] <- rbinom(nSamp, N_f_proj[,2,t], phi1.prob.proj[,t]) #2yos
+    N_f_proj[,4,t+1] <- rbinom(nSamp, N_f_proj[,3,t], phi2.prob.proj[,t]) #3yos
+    N_f_proj[,5,t+1] <- rbinom(nSamp, N_f_proj[,4,t], phi3.prob.proj[,t]*(1-psi3.prob.proj[,t])) #4yo PB
+    N_f_proj[,6,t+1] <- rbinom(nSamp, N_f_proj[,5,t], phi4.prob.proj[,t]*(1-psi4.prob.proj[,t])) #5yo PB 
+
+    N_4B[,t+1] <- rbinom(nSamp, N_f_proj[,4,t], phi3.prob.proj[,t]*psi3.prob.proj[,t]) #4yo breeders 
+    N_5B[,t+1] <- rbinom(nSamp, N_f_proj[,5,t], phi4.prob.proj[,t]*psi4.prob.proj[,t]) #5yo first-B  
+
+    N_6B[,t+1] <- rbinom(nSamp, N_f_proj[,6,t], phi5.prob.proj[,t]*psi5.prob.proj[,t]) #6yo first-B 
+    N_6NB[,t+1] <- rbinom(nSamp, N_f_proj[,6,t], phi5.prob.proj[,t]*(1-psi5.prob.proj[,t])) #6yo NB that was PB at 5 
+
+    ## Plus groups
+    #breeders
+    N_BB[,t+1] <- rbinom(nSamp, N_B[,t], phiB.prob.proj[,t]*psiB.prob.proj[,t]) # plus grp B given B (#6)
+    N_BNB[,t+1] <- rbinom(nSamp, N_NB[,t], phiNB.prob.proj[,t]*psiNB.prob.proj[,t]) # plus grp B given NB (#8)
+
+    #non breeders
+    N_NBNB[,t+1] <- rbinom(nSamp, N_NB[,t], phiNB.prob.proj[,t]*(1-psiNB.prob.proj[,t])) # plus grp NB given NB (#9)
+    N_NBB[,t+1] <- rbinom(nSamp, N_B[,t], phiB.prob.proj[,t]*(1-psiB.prob.proj[,t])) # plus grp NB given B (#7)
+
+    #total breeders and non-breeders
+    N_B[,t+1] <- N_4B[,t+1]+N_5B[,t+1]+N_6B[,t+1]+N_BB[,t+1]+N_BNB[,t+1] # total breeders
+    N_NB[,t+1] <- N_6NB[,t+1]+N_NBB[,t+1]+N_NBNB[,t+1] # total breeders
+
+    N_f_proj[,7,t+1] <- N_B[,t+1]   #B
+    N_f_proj[,8,t+1] <- N_NB[,t+1]  #NB
+    N_f_proj[,1,t+1] <- round(N_B[,t+1]/2) #pups 
+
+     Ntot_f_proj[,t+1] <- rowSums(N_f_proj[1:nSamp,1:8,t+1])
+
+    ###MALES
+    N_m_proj[,1,t+1] <- round(N_B[,t+1]/2) #pups
+    N_m_proj[,2,t+1] <- rbinom(nSamp, N_m_proj[,1,t], phiPM.prob.proj[,t]) #yearlings
+    N_m_proj[,3,t+1] <- rbinom(nSamp, N_m_proj[,2,t], phi1M.prob.proj[,t]) #2yos
+    N_m_proj[,4,t+1] <- rbinom(nSamp, N_m_proj[,3,t], phi2M.prob.proj[,t]) #3yos
+    N_m_proj[,5,t+1] <- rbinom(nSamp, N_m_proj[,4,t], phi3M.prob.proj[,t]) #4yos
+    N_m_proj[,6,t+1] <- rbinom(nSamp, N_m_proj[,5,t], phi4M.prob.proj[,t]) #5yos
+    N_A1[,t+1] <- rbinom(nSamp, N_m_proj[,6,t], phi5M.prob.proj[,t]) #new adults from 5yos
+    N_Aplus[,t+1] <- rbinom(nSamp, N_m_proj[,7,t], phiBM.prob.proj[,t]) #repeat adults 7+
+
+    N_m_proj[,7,t+1] <- N_A1[,t+1] + N_Aplus[,t+1]
+
+    Ntot_m_proj[,t+1] <- rowSums(N_m_proj[1:nSamp,1:7,t+1])
+    Ntot_proj[,t+1] <- Ntot_f_proj[,t+1] + Ntot_m_proj[,t+1]
+
+  } #t
+
+#fill space in Ntot with Ntot_proj projection years, essentially bind_cols()
+Ntot[,((n_occasions+nyears.burnin+1):(n_occasions+nyears.burnin+nyears.proj))] <- Ntot_proj[,]
+
+###### summarize objects over mcmc samples
+
+#growth rate over the whole study period
+lambda.yr.mean <- lambda.yr.lower <- lambda.yr.upper <- numeric(length = length(2:(n_occasions+nyears.burnin+nyears.proj)))
+for (t in 2:(n_occasions+nyears.burnin+nyears.proj)) {
+  #mean and quantiles per year across mcmc samples; leave na.rm for zero size pops in mcmc samples
+  lambda.yr.mean[t] <- mean(Ntot[,t]/(Ntot[,t-1]), na.rm = T)
+  lambda.yr.lower[t] <- quantile(Ntot[,t]/(Ntot[,t-1]), probs = 0.025, na.rm = T, names = F)
+  lambda.yr.upper[t] <- quantile(Ntot[,t]/(Ntot[,t-1]), probs = 0.975, na.rm = T, names = F)
+} #t lambda
+
+#### derive and store values for each simulation
+
+#geometric mean, and quantiles(?)
+lambda.mean.sim[sim,r] <- exp(mean(log(lambda.yr.mean[which(lambda.yr.mean>0)])))
+lambda.lower.sim[sim,r] <- exp(mean(log(lambda.yr.lower[which(lambda.yr.lower>0)])))
+lambda.upper.sim[sim,r] <- exp(mean(log(lambda.yr.upper[which(lambda.yr.upper>0)])))
+
+#prob of having less than 2 individuals and less than 1 breeding age female at end
+p.ext.sim[sim,r] <- mean(Ntot[,(n_occasions+nyears.burnin+nyears.proj)]<2)
+p.ad.ext.sim[sim,r] <- mean(N_f_proj[,7,nyears.proj]<1)
+
+#probability that have fewer individuals at end than start
+p.neg.sim[sim,r] <- mean(Ntot[,(n_occasions+nyears.burnin+nyears.proj)] < Ntot[,1])
+
+#population size at end of projection
+# end.size.sim[sim,1:3] <- quantile(Ntot[,(nyears.gap+nyears.ch+proj)], 
+#                                 probs = c(0.025, 0.5, 0.975), names = F)
+
+#Ntot
+Ntot.sim[1:nSamp,,sim,r] <- as.matrix(Ntot)
+
+} #sim 
+} #region
+  
+colnames(p.ext.sim) <- c("C.GULF", "E.ALEU", "E.GULF", "W.GULF", "C.ALEU", "W.ALEU")
+colnames(lambda.mean.sim) <- c("C.GULF", "E.ALEU", "E.GULF", "W.GULF", "C.ALEU", "W.ALEU")
+colnames(p.ad.ext.sim) <- c("C.GULF", "E.ALEU", "E.GULF", "W.GULF", "C.ALEU", "W.ALEU")
+colnames(p.neg.sim) <- c("C.GULF", "E.ALEU", "E.GULF", "W.GULF", "C.ALEU", "W.ALEU")
+
+p.ext.sim.all <- p.ext.sim %>%
+  reshape2::melt() %>%
+  transform(sc = sc)
+
+lambda.mean.sim.all <- lambda.mean.sim %>%
+  reshape2::melt() %>%
+  transform(sc = sc)
+
+p.ad.ext.sim.all <- p.ad.ext.sim %>%
+  reshape2::melt() %>%
+  transform(sc = sc)
+
+p.neg.sim.all <- p.neg.sim %>%
+  reshape2::melt() %>%
+  transform(sc = sc)
+
+#want mean and CI for each time step and region
+Ntot_mean <- apply(Ntot.sim, c(4,2), median)
+Ntot_q2.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.025, na.rm = T))
+Ntot_q97.5 <- apply(Ntot.sim, c(4,2), function(x) quantile(x,0.975))
+
+#Ntot figures
+N_mean_long_sim <- Ntot_mean %>%
+  reshape2::melt(value.name = 'mean') %>%
+  dplyr::rename(reg = Var1, year = Var2) %>%
+  transform(sc = sc)
+
+N_low_long_sim <- Ntot_q2.5 %>%
+  reshape2::melt(value.name = 'lower') %>%
+  dplyr::rename(reg = Var1, year = Var2) %>%
+  transform(sc = sc)
+
+N_high_long_sim <- Ntot_q97.5 %>%
+  reshape2::melt(value.name = 'upper') %>%
+  dplyr::rename(reg = Var1, year = Var2) %>%
+  transform(sc = sc)
+
+N_vals_sim <- N_mean_long_sim %>%
+  merge(N_low_long_sim, by = c('reg', 'year', 'sc')) %>%
+  merge(N_high_long_sim, by = c('reg', 'year', 'sc')) %>%
+  arrange(reg, year) %>%
+  transform(reg = factor(reg, levels = 1:6,
+                            labels = c("C.GULF", "E.ALEU", "E.GULF",
+                                       "W.GULF", "C.ALEU", "W.ALEU")))
+
+Ntot.sim.cov <- bind_rows(Ntot.sim.cov, N_vals_sim)
+lambda.mean.sim.cov <- bind_rows(lambda.mean.sim.cov, lambda.mean.sim.all)
+p.ext.sim.cov <- bind_rows(p.ext.sim.cov, p.ext.sim.all)
+p.ad.ext.sim.cov <- bind_rows(p.ad.ext.sim.cov, p.ad.ext.sim.all)
+p.neg.sim.cov <- bind_rows(p.neg.sim.cov, p.neg.sim.all)
+  
+} #scenario
+
+t.end <- Sys.time() # end clock
+(runTime <- t.end - t.start)
+
+## save objects
+tag <- 'extreme_long'
+saveRDS(Ntot.sim.cov, file = here::here('results', 'projections', paste0('Ntot_cov9', tag, '.rds')))
+saveRDS(lambda.mean.sim.cov, file = here::here('results', 'projections', paste0('lambda_cov9', tag, '.rds')))
+saveRDS(p.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ext_cov9', tag, '.rds')))
+saveRDS(p.ad.ext.sim.cov, file = here::here('results', 'projections', paste0('p.ad.ext_cov9', tag, '.rds')))
+saveRDS(p.neg.sim.cov, file = here::here('results', 'projections', paste0('p.neg_cov9', tag, '.rds')))
+
+# ggplot(Ntot.sim.cov,
+#        aes(year, mean, group = factor(sc), col = factor(sc))) +
+#   geom_line() +
+#   geom_ribbon(aes(year, ymin = lower, ymax = upper, col = factor(sc),
+#                   fill = factor(sc), alpha = 0.5), 
+#               show.legend = F) +
+#   xlab('') + ylab('Population size') +
+#   facet_wrap(~reg, scales = 'free') +
+#   plot_theme(legend.position = 'top') +
+#     scale_x_continuous(limits = c(1,n_occasions+nyears.burnin+nyears.proj),
+#                      breaks = seq(2, n_occasions+nyears.burnin+nyears.proj, by = 10),
+#                      labels = seq(2000, (2000+n_occasions+nyears.burnin+nyears.proj), by = 10)) +
+#   scale_color_manual(values = rainbow2, name = 'Scenario') +
+#   scale_fill_manual(values = rainbow2)
+#   scale_color_manual(values = rainbow2[-c(1)], name = 'Scenario') +
+#   scale_fill_manual(values = rainbow2[-c(1)])
+
+#####posterior summaries; boxplots of posterior means
+lambda_env_plot <- ggplot(lambda.mean.sim.cov, aes(y=value, x = sc, group = sc)) +
+  geom_boxplot(width = 0.5, aes(x = sc, color = sc), 
+               position = position_dodge(width = 0.5)) +
+  xlab('') + ylab('Population growth rate') +
+  plot_theme(legend.position = 'none',
+             panel.border = element_rect(fill = NA)) +
+  facet_wrap(~Var2) +
+  scale_color_manual(values = rainbow2[-c(1,4)], name = '') +
+  scale_fill_manual(values = rainbow2[-c(1,4)], name = '') 
+
+# p.ext.sim[1:nSamp, 1:n_r]
+p.ext <- p.ext.sim %>% reshape2::melt() %>% dplyr::rename(sim = Var1, reg = Var2)
+b <- ggplot(p.ext.sim.cov, aes(y=value, group = factor(reg), color = factor(reg))) +
+  geom_boxplot(width = 0.5) +
+  xlab('') + ylab('Probability of negative trend') +
+  theme_classic() +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
 
 ```
 

@@ -18,8 +18,8 @@ Understanding spatio-temporal variability in demography and the influence of env
 
 Contains the script to process raw data and run all analyses. 
 
--- SSL_wDPS_IPM_data.Rmd processes mark-resight observations into annual resightings histories.  
--- SSL_wDPS_IPM.Rmd loads in processed data and runs estimation models and viability simulation projections including environmental variability scenarios. 
+- SSL_wDPS_IPM_data.Rmd processes mark-resight observations into annual resightings histories.  
+- SSL_wDPS_IPM.Rmd loads in processed data, NIMBLE functions script, and runs estimation models and viability simulation projections including environmental variability scenarios. 
  
 #### [Data](./Data) 
 
