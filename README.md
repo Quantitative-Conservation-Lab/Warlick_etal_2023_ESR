@@ -6,6 +6,8 @@
 
 ##### Secondary contact: Sarah Converse (sconver@usgs.gov)
 
+DOI: https://doi.org/10.3354/esr01282
+
 ________________________________________________________________________________
 
 ## Abstract
